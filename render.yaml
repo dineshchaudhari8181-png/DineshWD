@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: slack-stats-service
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Add these via Render Dashboard:
+      # - SLACK_BOT_TOKEN
+      # - SLACK_SIGNING_SECRET
+      # - SLACK_CHANNEL_ID
+      # - CRON_SCHEDULE
+      # - CRON_TIMEZONE
+      # - DB_HOST
+      # - DB_PORT
+      # - DB_NAME
+      # - DB_USER
+      # - DB_PASSWORD
+
+databases:
+  - name: slack-stats-db
+    plan: free
+    databaseName: slack_dev_db
+    user: slack_user
+

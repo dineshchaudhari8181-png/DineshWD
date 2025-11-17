@@ -54,7 +54,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Slack stats service running.' });
 });
 
-app.post('/api/slack/events', verifySlackSignature, async (req, res) => {
+app.post('/api/slack/events', async (req, res) => {
   const payload = req.body;
 
   // Debug: Log all incoming requests
@@ -65,11 +65,43 @@ app.post('/api/slack/events', verifySlackSignature, async (req, res) => {
     timestamp: new Date().toISOString(),
   });
 
+  // Handle URL verification (no signature needed)
   if (payload.type === 'url_verification') {
-    console.log(`✅ URL verification challenge received`);
-    return res.send(payload.challenge);
+    console.log(`✅ URL verification challenge received: ${payload.challenge}`);
+    return res.status(200).send(payload.challenge);
   }
 
+  // Verify signature for event callbacks
+  if (payload.type === 'event_callback') {
+    // Verify signature
+    const signature = req.headers['x-slack-signature'];
+    const timestamp = req.headers['x-slack-request-timestamp'];
+
+    if (!signature || !timestamp) {
+      console.error('❌ Missing Slack signature headers');
+      return res.status(400).send('Missing Slack signature headers.');
+    }
+
+    if (config.slackSigningSecret) {
+      const ts = Number(timestamp);
+      if (Number.isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 60 * 5) {
+        console.error('❌ Stale Slack request');
+        return res.status(400).send('Stale Slack request.');
+      }
+
+      const hmac = crypto.createHmac('sha256', config.slackSigningSecret);
+      const base = `v0:${timestamp}:${req.rawBody || ''}`;
+      hmac.update(base);
+      const computed = `v0=${hmac.digest('hex')}`;
+
+      if (!crypto.timingSafeEqual(Buffer.from(computed, 'utf8'), Buffer.from(signature, 'utf8'))) {
+        console.error('❌ Invalid Slack signature');
+        return res.status(400).send('Invalid Slack signature.');
+      }
+    }
+  }
+
+  // Handle event callbacks
   if (payload.type === 'event_callback') {
     console.log(`📨 Event callback received for: ${payload.event?.type || 'unknown'}`);
     try {
@@ -77,7 +109,7 @@ app.post('/api/slack/events', verifySlackSignature, async (req, res) => {
     } catch (error) {
       console.error('❌ Error processing Slack event:', error);
     }
-  } else {
+  } else if (payload.type !== 'url_verification') {
     console.log(`⚠️  Unknown payload type: ${payload.type}`);
   }
 

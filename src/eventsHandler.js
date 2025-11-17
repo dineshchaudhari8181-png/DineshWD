@@ -1,149 +1,318 @@
+/**
+ * EVENTS_HANDLER.JS - Handles Incoming Slack Events
+ * 
+ * This file processes events that Slack sends to our server.
+ * When something happens in Slack (reaction added, message sent, etc.),
+ * Slack sends an event to our server, and this file decides what to do with it.
+ * 
+ * Flow:
+ * 1. Slack sends event → server.js receives it
+ * 2. server.js calls processSlackEvent() from this file
+ * 3. This file checks what type of event it is
+ * 4. Calls the appropriate handler function
+ * 5. Handler function saves the event to database
+ */
+
+// Import config to check which channel we're monitoring
 const config = require('./config');
+// Import functions to save events to database
 const { saveReactionEvent, saveMemberEvent, saveMessageEvent, saveFileEvent } = require('./eventsStore');
 
+/**
+ * Convert Slack timestamp to JavaScript Date object
+ * 
+ * Slack timestamps are in seconds (e.g., 1234567890.123456)
+ * JavaScript Date needs milliseconds, so we multiply by 1000
+ * 
+ * @param {string|number} eventTs - Slack timestamp (in seconds)
+ * @returns {Date} - JavaScript Date object
+ * 
+ * Example: slackTsToDate("1234567890") returns Date object for that time
+ */
 function slackTsToDate(eventTs) {
-  if (!eventTs) return new Date();
-  const millis = Number(eventTs) * 1000;
-  return new Date(millis);
+  if (!eventTs) return new Date();           // If no timestamp, return current time
+  const millis = Number(eventTs) * 1000;     // Convert seconds to milliseconds
+  return new Date(millis);                   // Create Date object
 }
 
+/**
+ * Handle when someone adds a reaction (emoji) to a message
+ * 
+ * @param {object} params - Event data
+ * @param {string} params.eventId - Unique ID for this event
+ * @param {object} params.event - Full event data from Slack
+ * 
+ * Example event:
+ * {
+ *   type: "reaction_added",
+ *   user: "U12345",
+ *   reaction: "thumbsup",
+ *   item: { channel: "C09SUH2KHK2" },
+ *   event_ts: "1234567890.123456"
+ * }
+ */
 async function handleReactionAdded({ eventId, event }) {
+  // Get the channel ID from the event
+  // event.item?.channel means "get channel from event.item, but if item doesn't exist, return undefined"
   const channelId = event.item?.channel;
+  
+  // Only process events from our target channel
+  // If channelId doesn't match, ignore this event
   if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;
+    return;  // Exit function early, don't save this event
   }
 
+  // Save the reaction event to the database
   await saveReactionEvent({
-    eventId,
-    channelId,
-    userId: event.user,
-    reaction: event.reaction,
-    eventTs: slackTsToDate(event.event_ts),
-    rawEvent: event,
+    eventId,                                    // Unique event ID
+    channelId,                                  // Which channel
+    userId: event.user,                         // Who added the reaction
+    reaction: event.reaction,                   // Which emoji (e.g., "thumbsup")
+    eventTs: slackTsToDate(event.event_ts),    // When it happened (converted to Date)
+    rawEvent: event,                            // Full event data (for debugging)
   });
 }
 
+/**
+ * Handle when someone joins the channel
+ * 
+ * @param {object} params - Event data
+ * @param {string} params.eventId - Unique ID for this event
+ * @param {object} params.event - Full event data from Slack
+ * 
+ * Example event:
+ * {
+ *   type: "member_joined_channel",
+ *   user: "U12345",
+ *   channel: "C09SUH2KHK2",
+ *   event_ts: "1234567890.123456"
+ * }
+ */
 async function handleMemberJoined({ eventId, event }) {
-  const channelId = event.channel;
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;
-  }
-
-  await saveMemberEvent({
-    eventId,
-    channelId,
-    userId: event.user,
-    eventType: event.type,
-    eventTs: slackTsToDate(event.event_ts || event.ts),
-    rawEvent: event,
-  });
-}
-
-async function handleMemberLeft({ eventId, event }) {
-  const channelId = event.channel;
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;
-  }
-
-  await saveMemberEvent({
-    eventId,
-    channelId,
-    userId: event.user,
-    eventType: event.type,
-    eventTs: slackTsToDate(event.event_ts || event.ts),
-    rawEvent: event,
-  });
-}
-
-async function handleMessage({ eventId, event }) {
+  // Get the channel ID from the event
   const channelId = event.channel;
   
-  // Debug logging
+  // Only process events from our target channel
+  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
+    return;  // Exit if not our channel
+  }
+
+  // Save the member joined event to database
+  await saveMemberEvent({
+    eventId,                                    // Unique event ID
+    channelId,                                  // Which channel
+    userId: event.user,                         // Who joined
+    eventType: event.type,                      // "member_joined_channel"
+    eventTs: slackTsToDate(event.event_ts || event.ts),  // When (some events use 'ts' instead of 'event_ts')
+    rawEvent: event,                            // Full event data
+  });
+}
+
+/**
+ * Handle when someone leaves the channel
+ * 
+ * @param {object} params - Event data
+ * @param {string} params.eventId - Unique ID for this event
+ * @param {object} params.event - Full event data from Slack
+ * 
+ * Example event:
+ * {
+ *   type: "member_left_channel",
+ *   user: "U12345",
+ *   channel: "C09SUH2KHK2",
+ *   event_ts: "1234567890.123456"
+ * }
+ */
+async function handleMemberLeft({ eventId, event }) {
+  // Get the channel ID from the event
+  const channelId = event.channel;
+  
+  // Only process events from our target channel
+  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
+    return;  // Exit if not our channel
+  }
+
+  // Save the member left event to database
+  await saveMemberEvent({
+    eventId,                                    // Unique event ID
+    channelId,                                  // Which channel
+    userId: event.user,                         // Who left
+    eventType: event.type,                      // "member_left_channel"
+    eventTs: slackTsToDate(event.event_ts || event.ts),  // When they left
+    rawEvent: event,                            // Full event data
+  });
+}
+
+/**
+ * Handle when someone sends a message in the channel
+ * 
+ * @param {object} params - Event data
+ * @param {string} params.eventId - Unique ID for this event
+ * @param {object} params.event - Full message event data from Slack
+ * 
+ * Example event:
+ * {
+ *   type: "message",
+ *   user: "U12345",
+ *   channel: "C09SUH2KHK2",
+ *   text: "Hello world!",
+ *   ts: "1234567890.123456"
+ * }
+ */
+async function handleMessage({ eventId, event }) {
+  // Get the channel ID from the event
+  const channelId = event.channel;
+  
+  // Debug logging - helps us see what's happening when testing
   console.log(`🔍 Message event details:`, {
-    channelId,
-    targetChannel: config.slackChannelId,
-    hasSubtype: !!event.subtype,
-    hasBotId: !!event.bot_id,
-    userId: event.user,
+    channelId,                              // Which channel
+    targetChannel: config.slackChannelId,   // Which channel we're monitoring
+    hasSubtype: !!event.subtype,            // Does this message have a subtype? (edit, delete, etc.)
+    hasBotId: !!event.bot_id,               // Is this from a bot?
+    userId: event.user,                     // Who sent it
   });
 
+  // Only process messages from our target channel
   if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
     console.log(`❌ Message skipped: Channel mismatch or missing channel ID`);
-    return;
+    return;  // Exit if not our channel
   }
 
-  // Skip bot messages and message subtypes (edits, deletions, etc.)
+  // Skip bot messages and message subtypes
+  // Subtypes include: message_changed (edit), message_deleted, etc.
+  // We only want to count regular user messages, not bot messages or edits
   if (event.subtype || event.bot_id) {
     console.log(`⏭️  Message skipped: Bot message or subtype (${event.subtype || 'bot_id'})`);
-    return;
+    return;  // Exit, don't save this message
   }
 
+  // Try to save the message event to database
   try {
     await saveMessageEvent({
-      eventId,
-      channelId,
-      userId: event.user,
-      eventTs: slackTsToDate(event.event_ts || event.ts),
-      rawEvent: event,
+      eventId,                                    // Unique event ID
+      channelId,                                  // Which channel
+      userId: event.user,                         // Who sent the message
+      eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was sent
+      rawEvent: event,                            // Full message data
     });
     console.log(`✅ Message event saved: ${eventId}`);
   } catch (error) {
+    // If something goes wrong, log the error but don't crash the server
     console.error(`❌ Error saving message event:`, error);
   }
 }
 
+/**
+ * Handle when someone uploads a file to the channel
+ * 
+ * @param {object} params - Event data
+ * @param {string} params.eventId - Unique ID for this event
+ * @param {object} params.event - Full file event data from Slack
+ * 
+ * Example event:
+ * {
+ *   type: "file_shared",
+ *   user_id: "U12345",
+ *   channel_id: "C09SUH2KHK2",
+ *   file_id: "F12345",
+ *   file: { name: "document.pdf" },
+ *   event_ts: "1234567890.123456"
+ * }
+ */
 async function handleFileShared({ eventId, event }) {
+  // Get the channel ID from the event
+  // Note: file events use "channel_id" instead of "channel"
   const channelId = event.channel_id;
+  
+  // Only process events from our target channel
   if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;
+    return;  // Exit if not our channel
   }
 
+  // Save the file upload event to database
   await saveFileEvent({
-    eventId,
-    channelId,
-    userId: event.user_id,
-    fileId: event.file_id,
-    fileName: event.file?.name || 'Unknown',
-    eventTs: slackTsToDate(event.event_ts || event.ts),
-    rawEvent: event,
+    eventId,                                    // Unique event ID
+    channelId,                                  // Which channel
+    userId: event.user_id,                      // Who uploaded (note: file events use "user_id")
+    fileId: event.file_id,                      // Slack's file ID
+    fileName: event.file?.name || 'Unknown',    // File name, or "Unknown" if not available
+    eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was uploaded
+    rawEvent: event,                            // Full event data
   });
 }
 
+/**
+ * Main function to process any Slack event
+ * This is called by server.js when Slack sends us an event
+ * 
+ * @param {object} payload - The full payload from Slack
+ * 
+ * Example payload:
+ * {
+ *   type: "event_callback",
+ *   event_id: "Ev12345",
+ *   event: {
+ *     type: "reaction_added",
+ *     user: "U12345",
+ *     ...
+ *   }
+ * }
+ */
 async function processSlackEvent(payload) {
+  // Extract the event and event_id from the payload
+  // Destructuring: const { event, event_id: eventId } means:
+  // - Get "event" from payload and call it "event"
+  // - Get "event_id" from payload and call it "eventId"
   const { event, event_id: eventId } = payload;
+  
+  // If there's no event or event_id, we can't process it
   if (!event || !eventId) {
-    return;
+    return;  // Exit early
   }
 
-  // Log all incoming events for debugging
+  // Log what event we received (helps with debugging)
   console.log(`📥 Received event: ${event.type} (event_id: ${eventId})`);
 
+  // Use switch statement to handle different event types
+  // Think of it like: "If event type is X, do Y"
   switch (event.type) {
+    // Someone added a reaction (emoji) to a message
     case 'reaction_added':
       await handleReactionAdded({ eventId, event });
       break;
+    
+    // Someone joined the channel
     case 'member_joined_channel':
       await handleMemberJoined({ eventId, event });
       break;
+    
+    // Someone left the channel
     case 'member_left_channel':
       await handleMemberLeft({ eventId, event });
       break;
+    
+    // Someone sent a message
     case 'message':
-      // Handle messages from channels (when subscribed to message.channels)
-      // The event type is still 'message' but subscription is 'message.channels'
+      // Note: When subscribed to "message.channels", Slack still sends type "message"
+      // but it only sends messages from public channels
       console.log(`💬 Processing message event from channel: ${event.channel}`);
       await handleMessage({ eventId, event });
       break;
+    
+    // Someone uploaded a file
     case 'file_shared':
       await handleFileShared({ eventId, event });
       break;
+    
+    // If we get an event type we don't know how to handle, just log it
     default:
       console.log(`⚠️  Unhandled event type: ${event.type}`);
       break;
   }
 }
 
+// Export the main function so server.js can use it
 module.exports = {
-  processSlackEvent,
+  processSlackEvent,  // This is the main function that processes all Slack events
 };
 

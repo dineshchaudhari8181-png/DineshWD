@@ -6,12 +6,12 @@
  * 
  * How it works:
  * 1. When server starts, scheduleDailySummary() is called
- * 2. It sets up a cron job to run at the scheduled time (e.g., 10 AM)
+ * 2. It sets up a cron job to run at the scheduled time (e.g., 12:30 PM IST)
  * 3. When the time comes, it calls runDailySummaryJob()
  * 4. runDailySummaryJob() collects yesterday's stats and posts to Slack
  * 
  * Cron schedule format: "minute hour day month weekday"
- * Example: "0 10 * * *" means: at 10:00 AM every day
+ * Example: "30 12 * * *" means: at 12:30 PM every day
  */
 
 // Import node-cron library for scheduling
@@ -96,7 +96,11 @@ async function runDailySummaryJob({ date, defaultToToday = false } = {}) {
     );
   } catch (error) {
     // If something goes wrong, log the error but don't crash
-    console.error('Failed to post daily summary:', error);
+    console.error('\n❌ ========================================');
+    console.error('❌ Failed to post daily summary:');
+    console.error('❌ Error:', error.message);
+    console.error('❌ Stack:', error.stack);
+    console.error('❌ ========================================\n');
   }
 }
 
@@ -105,7 +109,7 @@ async function runDailySummaryJob({ date, defaultToToday = false } = {}) {
  * This sets up a cron job that runs at the configured time every day
  * 
  * The cron job will:
- * - Run at the time specified in CRON_SCHEDULE (e.g., "0 10 * * *" = 10 AM)
+ * - Run at the time specified in CRON_SCHEDULE (e.g., "30 12 * * *" = 12:30 PM)
  * - Use the timezone specified in CRON_TIMEZONE (e.g., "Asia/Kolkata")
  * - Call runDailySummaryJob() which collects yesterday's stats
  */
@@ -116,17 +120,30 @@ function scheduleDailySummary() {
     return;  // Exit early if not configured
   }
 
+  // Log current time and timezone for debugging
+  const now = new Date();
+  console.log(`🕐 Current server time: ${now.toISOString()}`);
+  console.log(`🌍 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+  console.log(`⏰ Scheduled timezone: ${config.timezone}`);
+  console.log(`📅 Cron schedule: "${config.cronSchedule}"`);
+
   // Set up the cron job
-  cron.schedule(
-    config.cronSchedule,  // When to run (e.g., "0 10 * * *" = 10 AM daily)
+  const task = cron.schedule(
+    config.cronSchedule,  // When to run (e.g., "30 12 * * *" = 12:30 PM daily)
     () => {
       // This function runs when the scheduled time arrives
-      console.log('⏰ Running scheduled Slack summary job...');
+      const triggerTime = new Date();
+      console.log(`\n⏰ ========================================`);
+      console.log(`⏰ Running scheduled Slack summary job...`);
+      console.log(`⏰ Triggered at: ${triggerTime.toISOString()}`);
+      console.log(`⏰ Timezone: ${config.timezone}`);
+      console.log(`⏰ ========================================\n`);
       // Run the summary job (will use yesterday's date by default)
       runDailySummaryJob();
     },
     {
       timezone: config.timezone,  // Which timezone (e.g., "Asia/Kolkata")
+      scheduled: true,  // Start the task immediately
     }
   );
 
@@ -134,6 +151,16 @@ function scheduleDailySummary() {
   console.log(
     `📆 Scheduler initialized. Summaries will post at "${config.cronSchedule}" (${config.timezone}).`
   );
+  
+  // Log next run time (approximate)
+  console.log(`📆 Next scheduled run: Tomorrow at 12:30 PM ${config.timezone}`);
+  
+  // Verify cron is valid
+  if (!cron.validate(config.cronSchedule)) {
+    console.error(`❌ ERROR: Invalid cron schedule: "${config.cronSchedule}"`);
+    console.error(`   Format should be: "minute hour day month weekday"`);
+    console.error(`   Example: "30 12 * * *" for 12:30 PM daily`);
+  }
 }
 
 // Export functions so server.js can use them

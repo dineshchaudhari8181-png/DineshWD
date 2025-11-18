@@ -55,11 +55,11 @@ const config = {
   
   // Cron schedule - when to run the daily summary
   // Format: "minute hour day month weekday"
-  // "0 10 * * *" means: at 10:00 AM every day
-  cronSchedule: process.env.CRON_SCHEDULE || '0 10 * * *',
+  // "30 12 * * *" means: at 12:30 PM every day
+  cronSchedule: process.env.CRON_SCHEDULE || '30 12 * * *',
   
   // Timezone for the cron schedule (e.g., "Asia/Kolkata" for India time)
-  timezone: process.env.CRON_TIMEZONE || 'UTC',
+  timezone: process.env.CRON_TIMEZONE || 'Asia/Kolkata',
   
   // Database URL - full connection string (used by Render)
   // Format: postgresql://user:password@host:port/database

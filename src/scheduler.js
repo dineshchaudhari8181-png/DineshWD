@@ -121,8 +121,8 @@ function scheduleDailySummary() {
   }
 
   // Log current time and timezone for debugging
-  const now = new Date();
-  console.log(`🕐 Current server time: ${now.toISOString()}`);
+  const currentTime = new Date();
+  console.log(`🕐 Current server time: ${currentTime.toISOString()}`);
   console.log(`🌍 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
   console.log(`⏰ Scheduled timezone: ${config.timezone}`);
   console.log(`📅 Cron schedule: "${config.cronSchedule}"`);
@@ -152,8 +152,22 @@ function scheduleDailySummary() {
     `📆 Scheduler initialized. Summaries will post at "${config.cronSchedule}" (${config.timezone}).`
   );
   
-  // Log next run time (approximate)
-  console.log(`📆 Next scheduled run: Tomorrow at 12:30 PM ${config.timezone}`);
+  // Calculate and log next run time
+  const currentTimeForCalc = new Date();
+  const nowInTimezone = new Date(currentTimeForCalc.toLocaleString('en-US', { timeZone: config.timezone }));
+  const todayAt1230 = new Date(nowInTimezone);
+  todayAt1230.setHours(12, 30, 0, 0);
+  
+  let nextRun;
+  if (nowInTimezone < todayAt1230) {
+    // If it's before 12:30 PM today, next run is today
+    nextRun = `Today at 12:30 PM ${config.timezone}`;
+  } else {
+    // If it's after 12:30 PM today, next run is tomorrow
+    nextRun = `Tomorrow at 12:30 PM ${config.timezone}`;
+  }
+  
+  console.log(`📆 Next scheduled run: ${nextRun}`);
   
   // Verify cron is valid
   if (!cron.validate(config.cronSchedule)) {

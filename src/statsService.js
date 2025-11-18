@@ -24,22 +24,39 @@ const {
 const config = require('./config');
 
 /**
- * Get the start and end times for a specific date
+ * Helper to extract the date components (year, month, day) for a given timezone.
+ *
+ * @param {Date} date - The reference date.
+ * @param {string} timezone - IANA timezone string (e.g., "Asia/Kolkata").
+ * @returns {{ year: number, month: number, day: number }}
+ */
+function getTimezoneDateParts(date, timezone = 'UTC') {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const [year, month, day] = formatter.format(date).split('-').map(Number);
+  return { year, month, day };
+}
+
+/**
+ * Get the start and end times for a specific date in a specific timezone.
  * 
  * @param {Date} targetDate - The date we want to get the range for
- * @returns {object} - Object with start and end Date objects
+ * @param {string} timezone - IANA timezone identifier (e.g., "Asia/Kolkata")
+ * @returns {object} - Object with start and end Date objects (stored in UTC)
  * 
- * Example: getDayRange(new Date('2024-01-15'))
- *          Returns: { start: Date(2024-01-15 00:00:00), end: Date(2024-01-15 23:59:59) }
+ * Example: getDayRange(new Date('2024-01-15'), 'Asia/Kolkata')
+ *          Returns: { start: 2024-01-14T18:30:00.000Z, end: 2024-01-15T18:29:59.999Z }
  */
-function getDayRange(targetDate) {
-  // Create a new Date object for the start of the day
-  const start = new Date(targetDate);
-  start.setHours(0, 0, 0, 0);  // Set to 00:00:00.000 (midnight)
+function getDayRange(targetDate, timezone = 'UTC') {
+  const { year, month, day } = getTimezoneDateParts(targetDate, timezone);
 
-  // Create a new Date object for the end of the day
-  const end = new Date(targetDate);
-  end.setHours(23, 59, 59, 999);  // Set to 23:59:59.999 (last millisecond of the day)
+  const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 
   return { start, end };
 }
@@ -68,13 +85,17 @@ async function collectStatsForDate(targetDate) {
     throw new Error('SLACK_CHANNEL_ID is not configured.');
   }
 
-  // Convert date to YYYY-MM-DD format (e.g., "2024-01-15")
-  // toISOString() returns "2024-01-15T00:00:00.000Z"
-  // slice(0, 10) takes only the first 10 characters: "2024-01-15"
-  const statDate = targetDate.toISOString().slice(0, 10);
+  // Convert date to YYYY-MM-DD format in the configured timezone (e.g., "2024-01-15")
+  const timezone = config.timezone || 'UTC';
+  const statDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(targetDate);
   
   // Get the start and end times for this date
-  const { start, end } = getDayRange(targetDate);
+  const { start, end } = getDayRange(targetDate, timezone);
 
   // Count all events in parallel using Promise.all
   // Promise.all runs all these database queries at the same time (faster than one by one)

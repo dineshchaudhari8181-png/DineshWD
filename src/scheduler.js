@@ -6,12 +6,12 @@
  * 
  * How it works:
  * 1. When server starts, scheduleDailySummary() is called
- * 2. It sets up a cron job to run at the scheduled time (e.g., 12:30 PM IST)
+ * 2. It sets up a cron job to run at the scheduled time (e.g., 3:00 PM IST)
  * 3. When the time comes, it calls runDailySummaryJob()
  * 4. runDailySummaryJob() collects yesterday's stats and posts to Slack
  * 
  * Cron schedule format: "minute hour day month weekday"
- * Example: "30 12 * * *" means: at 12:30 PM every day
+ * Example: "0 15 * * *" means: at 3:00 PM every day
  */
 
 // Import node-cron library for scheduling
@@ -44,18 +44,24 @@ function parseDateInput(input) {
  * @returns {Date} - Date object set to start of day (00:00:00)
  */
 function getDefaultDate(useToday = false) {
-  // Create a new Date object (current date/time)
-  const d = new Date();
-  
-  // If useToday is false, subtract 1 day (get yesterday)
+  // Determine the current date in the configured timezone
+  const timezone = config.timezone || 'UTC';
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const [year, month, day] = formatter.format(new Date()).split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+
   if (!useToday) {
-    d.setDate(d.getDate() - 1);  // Go back 1 day
+    // Move one day back (yesterday in the configured timezone)
+    target.setUTCDate(target.getUTCDate() - 1);
   }
-  
-  // Set time to 00:00:00.000 (start of day)
-  d.setHours(0, 0, 0, 0);
-  
-  return d;
+
+  return target;
 }
 
 /**
@@ -105,11 +111,56 @@ async function runDailySummaryJob({ date, defaultToToday = false } = {}) {
 }
 
 /**
+ * Parse a cron expression (minute hour ...) into hour/minute numbers.
+ * Supports daily expressions like "0 15 * * *"
+ *
+ * @param {string} cronExpr
+ * @returns {{hour: number, minute: number}|null}
+ */
+function parseDailyCronTime(cronExpr) {
+  if (!cronExpr) {
+    return null;
+  }
+
+  const parts = cronExpr.trim().split(/\s+/);
+  if (parts.length < 5) {
+    return null;
+  }
+
+  const minute = Number(parts[0]);
+  const hour = Number(parts[1]);
+
+  if ([minute, hour].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+
+  if (minute < 0 || minute > 59 || hour < 0 || hour > 23) {
+    return null;
+  }
+
+  return { hour, minute };
+}
+
+/**
+ * Format an hour/minute pair into a user-friendly 12-hour clock string.
+ *
+ * @param {number} hour
+ * @param {number} minute
+ * @returns {string}
+ */
+function formatTime(hour, minute) {
+  const normalizedHour = ((hour + 11) % 12) + 1; // 0 -> 12, 13 -> 1 etc.
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const paddedMinute = minute.toString().padStart(2, '0');
+  return `${normalizedHour}:${paddedMinute} ${period}`;
+}
+
+/**
  * Schedule the daily summary to run automatically
  * This sets up a cron job that runs at the configured time every day
  * 
  * The cron job will:
- * - Run at the time specified in CRON_SCHEDULE (e.g., "30 12 * * *" = 12:30 PM)
+ * - Run at the time specified in CRON_SCHEDULE (e.g., "0 15 * * *" = 3:00 PM)
  * - Use the timezone specified in CRON_TIMEZONE (e.g., "Asia/Kolkata")
  * - Call runDailySummaryJob() which collects yesterday's stats
  */
@@ -129,7 +180,7 @@ function scheduleDailySummary() {
 
   // Set up the cron job
   const task = cron.schedule(
-    config.cronSchedule,  // When to run (e.g., "30 12 * * *" = 12:30 PM daily)
+    config.cronSchedule,  // When to run (e.g., "0 15 * * *" = 3:00 PM daily)
     () => {
       // This function runs when the scheduled time arrives
       const triggerTime = new Date();
@@ -155,25 +206,28 @@ function scheduleDailySummary() {
   // Calculate and log next run time
   const currentTimeForCalc = new Date();
   const nowInTimezone = new Date(currentTimeForCalc.toLocaleString('en-US', { timeZone: config.timezone }));
-  const todayAt1230 = new Date(nowInTimezone);
-  todayAt1230.setHours(12, 30, 0, 0);
-  
+  const cronTime = parseDailyCronTime(config.cronSchedule);
+  const hour = cronTime?.hour ?? 12;
+  const minute = cronTime?.minute ?? 30;
+
+  const nextRunDate = new Date(nowInTimezone);
+  nextRunDate.setHours(hour, minute, 0, 0);
+
+  const humanTime = cronTime ? formatTime(hour, minute) : `cron "${config.cronSchedule}"`;
   let nextRun;
-  if (nowInTimezone < todayAt1230) {
-    // If it's before 12:30 PM today, next run is today
-    nextRun = `Today at 12:30 PM ${config.timezone}`;
+  if (nowInTimezone < nextRunDate) {
+    nextRun = `Today at ${humanTime} ${config.timezone}`;
   } else {
-    // If it's after 12:30 PM today, next run is tomorrow
-    nextRun = `Tomorrow at 12:30 PM ${config.timezone}`;
+    nextRun = `Tomorrow at ${humanTime} ${config.timezone}`;
   }
-  
+
   console.log(`📆 Next scheduled run: ${nextRun}`);
   
   // Verify cron is valid
   if (!cron.validate(config.cronSchedule)) {
     console.error(`❌ ERROR: Invalid cron schedule: "${config.cronSchedule}"`);
     console.error(`   Format should be: "minute hour day month weekday"`);
-    console.error(`   Example: "30 12 * * *" for 12:30 PM daily`);
+    console.error(`   Example: "0 15 * * *" for 3:00 PM daily`);
   }
 }
 

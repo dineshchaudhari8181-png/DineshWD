@@ -55,8 +55,8 @@ const config = {
   
   // Cron schedule - when to run the daily summary
   // Format: "minute hour day month weekday"
-  // "30 12 * * *" means: at 12:30 PM every day
-  cronSchedule: process.env.CRON_SCHEDULE || '30 12 * * *',
+  // "0 15 * * *" means: at 3:00 PM every day
+  cronSchedule: process.env.CRON_SCHEDULE || '0 15 * * *',
   
   // Timezone for the cron schedule (e.g., "Asia/Kolkata" for India time)
   timezone: process.env.CRON_TIMEZONE || 'Asia/Kolkata',

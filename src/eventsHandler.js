@@ -55,11 +55,9 @@ async function handleReactionAdded({ eventId, event }) {
   // Get the channel ID from the event
   // event.item?.channel means "get channel from event.item, but if item doesn't exist, return undefined"
   const channelId = event.item?.channel;
-  
-  // Only process events from our target channel
-  // If channelId doesn't match, ignore this event
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;  // Exit function early, don't save this event
+  if (!channelId) {
+    console.log('❌ Reaction event skipped: Missing channel ID');
+    return;
   }
 
   // Save the reaction event to the database
@@ -91,10 +89,9 @@ async function handleReactionAdded({ eventId, event }) {
 async function handleMemberJoined({ eventId, event }) {
   // Get the channel ID from the event
   const channelId = event.channel;
-  
-  // Only process events from our target channel
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;  // Exit if not our channel
+  if (!channelId) {
+    console.log('❌ Member joined event skipped: Missing channel ID');
+    return;
   }
 
   // Save the member joined event to database
@@ -126,10 +123,9 @@ async function handleMemberJoined({ eventId, event }) {
 async function handleMemberLeft({ eventId, event }) {
   // Get the channel ID from the event
   const channelId = event.channel;
-  
-  // Only process events from our target channel
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    return;  // Exit if not our channel
+  if (!channelId) {
+    console.log('❌ Member left event skipped: Missing channel ID');
+    return;
   }
 
   // Save the member left event to database
@@ -173,8 +169,8 @@ async function handleMessage({ eventId, event }) {
   });
 
   // Only process messages from our target channel
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    console.log(`❌ Message skipped: Channel mismatch or missing channel ID`);
+  if (!channelId) {
+    console.log(`❌ Message skipped: Missing channel ID`);
     return;  // Exit if not our channel
   }
 
@@ -225,9 +221,9 @@ async function handleFileShared({ eventId, event }) {
   const channelId = event.channel_id;
   
   // Only process events from our target channel
-  if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
-    console.log(`❌ File event skipped: Channel mismatch or missing channel ID`);
-    return;  // Exit if not our channel
+  if (!channelId) {
+    console.log(`❌ File event skipped: Missing channel ID`);
+    return;
   }
 
   // Save the file upload event to database

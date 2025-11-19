@@ -60,15 +60,19 @@ async function handleReactionAdded({ eventId, event }) {
     return;
   }
 
-  // Save the reaction event to the database
-  await saveReactionEvent({
-    eventId,                                    // Unique event ID
-    channelId,                                  // Which channel
-    userId: event.user,                         // Who added the reaction
-    reaction: event.reaction,                   // Which emoji (e.g., "thumbsup")
-    eventTs: slackTsToDate(event.event_ts),    // When it happened (converted to Date)
-    rawEvent: event,                            // Full event data (for debugging)
-  });
+  try {
+    await saveReactionEvent({
+      eventId,
+      channelId,
+      userId: event.user,
+      reaction: event.reaction,
+      eventTs: slackTsToDate(event.event_ts),
+      rawEvent: event,
+    });
+    console.log(`✅ Reaction event saved: ${eventId} (channel ${channelId})`);
+  } catch (error) {
+    console.error(`❌ Error saving reaction event ${eventId}:`, error.message);
+  }
 }
 
 /**
@@ -94,15 +98,19 @@ async function handleMemberJoined({ eventId, event }) {
     return;
   }
 
-  // Save the member joined event to database
-  await saveMemberEvent({
-    eventId,                                    // Unique event ID
-    channelId,                                  // Which channel
-    userId: event.user,                         // Who joined
-    eventType: event.type,                      // "member_joined_channel"
-    eventTs: slackTsToDate(event.event_ts || event.ts),  // When (some events use 'ts' instead of 'event_ts')
-    rawEvent: event,                            // Full event data
-  });
+  try {
+    await saveMemberEvent({
+      eventId,
+      channelId,
+      userId: event.user,
+      eventType: event.type,
+      eventTs: slackTsToDate(event.event_ts || event.ts),
+      rawEvent: event,
+    });
+    console.log(`✅ Member joined event saved: ${eventId} (channel ${channelId})`);
+  } catch (error) {
+    console.error(`❌ Error saving member joined event ${eventId}:`, error.message);
+  }
 }
 
 /**
@@ -128,15 +136,19 @@ async function handleMemberLeft({ eventId, event }) {
     return;
   }
 
-  // Save the member left event to database
-  await saveMemberEvent({
-    eventId,                                    // Unique event ID
-    channelId,                                  // Which channel
-    userId: event.user,                         // Who left
-    eventType: event.type,                      // "member_left_channel"
-    eventTs: slackTsToDate(event.event_ts || event.ts),  // When they left
-    rawEvent: event,                            // Full event data
-  });
+  try {
+    await saveMemberEvent({
+      eventId,
+      channelId,
+      userId: event.user,
+      eventType: event.type,
+      eventTs: slackTsToDate(event.event_ts || event.ts),
+      rawEvent: event,
+    });
+    console.log(`✅ Member left event saved: ${eventId} (channel ${channelId})`);
+  } catch (error) {
+    console.error(`❌ Error saving member left event ${eventId}:`, error.message);
+  }
 }
 
 /**
@@ -191,10 +203,10 @@ async function handleMessage({ eventId, event }) {
       eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was sent
       rawEvent: event,                            // Full message data
     });
-    console.log(`✅ Message event saved: ${eventId}`);
+    console.log(`✅ Message event saved: ${eventId} (channel ${channelId})`);
   } catch (error) {
     // If something goes wrong, log the error but don't crash the server
-    console.error(`❌ Error saving message event:`, error);
+    console.error(`❌ Error saving message event ${eventId}:`, error.message);
   }
 }
 
@@ -237,10 +249,9 @@ async function handleFileShared({ eventId, event }) {
       eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was uploaded
       rawEvent: event,                            // Full event data
     });
-    console.log(`✅ File event saved: ${eventId}`);
+    console.log(`✅ File event saved: ${eventId} (channel ${channelId})`);
   } catch (error) {
-    // If something goes wrong, log the error but don't crash the server
-    console.error(`❌ Error saving file event:`, error);
+    console.error(`❌ Error saving file event ${eventId}:`, error.message);
   }
 }
 

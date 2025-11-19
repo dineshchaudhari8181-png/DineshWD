@@ -127,10 +127,9 @@ function buildSummaryBlocks(summary) {
  * We save it to the database so we can reference this message later.
  */
 async function postSummary(summary) {
-  // Check if credentials are configured
-  if (!config.slackBotToken || !config.slackChannelId) {
-    console.warn('Slack credentials missing. Skipping post.');
-    return null;  // Can't post without credentials
+  if (!config.slackBotToken) {
+    console.warn('⚠️  SLACK_BOT_TOKEN is not set. Slack messages cannot be sent.');
+    return null;
   }
 
   // Build the Block Kit blocks (the formatted message)
@@ -141,8 +140,14 @@ async function postSummary(summary) {
   const text = `Daily summary for ${summary.statDate}: ${summary.messageCount} messages, ${summary.reactionCount} reactions, ${summary.fileUploadCount} files, ${summary.newMemberCount} new members, ${summary.memberRemovedCount} members removed.`;
 
   // Send the message to Slack using the Web API
+  const targetChannel = summary.channelId || config.slackChannelId;
+  if (!targetChannel) {
+    console.warn('⚠️  No channel provided for summary post.');
+    return null;
+  }
+
   const response = await slackClient.chat.postMessage({
-    channel: config.slackChannelId,  // Which channel to post to
+    channel: targetChannel,
     text,                             // Plain text fallback
     blocks,                           // Block Kit formatted message
   });

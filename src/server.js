@@ -256,6 +256,33 @@ app.post('/api/slack/run-summary', async (req, res) => {
   }
 });
 
+app.post(
+  '/api/slack/command',
+  bodyParser.urlencoded({ extended: true }),
+  async (req, res) => {
+    const { command, channel_id: channelId, user_id: userId } = req.body || {};
+
+    if (command !== '/dailyengage') {
+      return res.json({
+        response_type: 'ephemeral',
+        text: 'Only /dailyengage is supported.',
+      });
+    }
+
+    res.json({
+      response_type: 'ephemeral',
+      text: `✅ Collecting yesterday's stats for <#${channelId}>...`,
+    });
+
+    try {
+      await runDailySummaryJob({ defaultToToday: false, channelId });
+      console.log(`Slash command triggered by ${userId} in ${channelId}.`);
+    } catch (error) {
+      console.error('Failed to run summary via slash command:', error);
+    }
+  }
+);
+
 /**
  * Start the server
  * 

@@ -79,9 +79,8 @@ function getDayRange(targetDate, timezone = 'UTC') {
  *   fileUploadCount: 5
  * }
  */
-async function collectStatsForDate(targetDate) {
-  // Check if channel ID is configured
-  if (!config.slackChannelId) {
+async function collectStatsForDate(targetDate, channelId = config.slackChannelId) {
+  if (!channelId) {
     throw new Error('SLACK_CHANNEL_ID is not configured.');
   }
 
@@ -101,16 +100,16 @@ async function collectStatsForDate(targetDate) {
   // Promise.all runs all these database queries at the same time (faster than one by one)
   // The results are stored in an array in the same order
   const [reactionCount, newMemberCount, memberRemovedCount, messageCount, fileUploadCount] = await Promise.all([
-    countReactionsBetween(config.slackChannelId, start, end),        // Count reactions
-    countNewMembersBetween(config.slackChannelId, start, end),       // Count new members
-    countMembersRemovedBetween(config.slackChannelId, start, end),   // Count members who left
-    countMessagesBetween(config.slackChannelId, start, end),         // Count messages
-    countFileUploadsBetween(config.slackChannelId, start, end),      // Count file uploads
+    countReactionsBetween(channelId, start, end),
+    countNewMembersBetween(channelId, start, end),
+    countMembersRemovedBetween(channelId, start, end),
+    countMessagesBetween(channelId, start, end),
+    countFileUploadsBetween(channelId, start, end),
   ]);
 
   // Return a summary object with all the counts
   return {
-    channelId: config.slackChannelId,  // Which channel
+    channelId,                         // Which channel
     statDate,                           // Which date (YYYY-MM-DD)
     reactionCount,                      // Total reactions
     newMemberCount,                     // New members

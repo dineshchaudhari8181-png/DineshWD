@@ -75,8 +75,9 @@ function getDefaultDate(useToday = false) {
  * @param {object} options - Options for the job
  * @param {string} options.date - Optional date string (e.g., "2024-01-15")
  * @param {boolean} options.defaultToToday - If true, use today. If false, use yesterday
+ * @param {string} options.channelId - Optional channel override
  */
-async function runDailySummaryJob({ date, defaultToToday = false } = {}) {
+async function runDailySummaryJob({ date, defaultToToday = false, channelId } = {}) {
   // Determine which date to use:
   // 1. If date parameter is provided, parse it
   // 2. Otherwise, use getDefaultDate() (yesterday by default, or today if defaultToToday is true)
@@ -85,7 +86,7 @@ async function runDailySummaryJob({ date, defaultToToday = false } = {}) {
   try {
     // Step 1: Collect all statistics for the target date
     // This counts reactions, messages, files, members, etc. from that day
-    const summary = await collectStatsForDate(targetDate);
+    const summary = await collectStatsForDate(targetDate, channelId);
     
     // Step 2: Post the summary to Slack
     // This sends a formatted message to the channel

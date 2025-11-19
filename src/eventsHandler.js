@@ -226,19 +226,26 @@ async function handleFileShared({ eventId, event }) {
   
   // Only process events from our target channel
   if (!channelId || (config.slackChannelId && channelId !== config.slackChannelId)) {
+    console.log(`❌ File event skipped: Channel mismatch or missing channel ID`);
     return;  // Exit if not our channel
   }
 
   // Save the file upload event to database
-  await saveFileEvent({
-    eventId,                                    // Unique event ID
-    channelId,                                  // Which channel
-    userId: event.user_id,                      // Who uploaded (note: file events use "user_id")
-    fileId: event.file_id,                      // Slack's file ID
-    fileName: event.file?.name || 'Unknown',    // File name, or "Unknown" if not available
-    eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was uploaded
-    rawEvent: event,                            // Full event data
-  });
+  try {
+    await saveFileEvent({
+      eventId,                                    // Unique event ID
+      channelId,                                  // Which channel
+      userId: event.user_id,                      // Who uploaded (note: file events use "user_id")
+      fileId: event.file_id,                      // Slack's file ID
+      fileName: event.file?.name || 'Unknown',    // File name, or "Unknown" if not available
+      eventTs: slackTsToDate(event.event_ts || event.ts),  // When it was uploaded
+      rawEvent: event,                            // Full event data
+    });
+    console.log(`✅ File event saved: ${eventId}`);
+  } catch (error) {
+    // If something goes wrong, log the error but don't crash the server
+    console.error(`❌ Error saving file event:`, error);
+  }
 }
 
 /**

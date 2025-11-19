@@ -6,12 +6,12 @@
  * 
  * How it works:
  * 1. When server starts, scheduleDailySummary() is called
- * 2. It sets up a cron job to run at the scheduled time (e.g., 3:00 PM IST)
+ * 2. It sets up a cron job to run at the scheduled time (e.g., 12:00 PM IST)
  * 3. When the time comes, it calls runDailySummaryJob()
  * 4. runDailySummaryJob() collects yesterday's stats and posts to Slack
  * 
  * Cron schedule format: "minute hour day month weekday"
- * Example: "0 15 * * *" means: at 3:00 PM every day
+ * Example: "0 12 * * *" means: at 12:00 PM (noon) every day
  */
 
 // Import node-cron library for scheduling
@@ -160,7 +160,7 @@ function formatTime(hour, minute) {
  * This sets up a cron job that runs at the configured time every day
  * 
  * The cron job will:
- * - Run at the time specified in CRON_SCHEDULE (e.g., "0 15 * * *" = 3:00 PM)
+ * - Run at the time specified in CRON_SCHEDULE (e.g., "0 12 * * *" = 12:00 PM)
  * - Use the timezone specified in CRON_TIMEZONE (e.g., "Asia/Kolkata")
  * - Call runDailySummaryJob() which collects yesterday's stats
  */
@@ -180,7 +180,7 @@ function scheduleDailySummary() {
 
   // Set up the cron job
   const task = cron.schedule(
-    config.cronSchedule,  // When to run (e.g., "0 15 * * *" = 3:00 PM daily)
+    config.cronSchedule,  // When to run (e.g., "0 12 * * *" = 12:00 PM daily)
     () => {
       // This function runs when the scheduled time arrives
       const triggerTime = new Date();
@@ -227,7 +227,7 @@ function scheduleDailySummary() {
   if (!cron.validate(config.cronSchedule)) {
     console.error(`❌ ERROR: Invalid cron schedule: "${config.cronSchedule}"`);
     console.error(`   Format should be: "minute hour day month weekday"`);
-    console.error(`   Example: "0 15 * * *" for 3:00 PM daily`);
+    console.error(`   Example: "0 12 * * *" for 12:00 PM daily`);
   }
 }
 

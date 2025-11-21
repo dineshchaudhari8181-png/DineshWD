@@ -16,15 +16,27 @@ const config = require('./config');
 
 // Gemini AI integration (optional fallback for advanced sentiment analysis)
 let geminiClient = null;
+console.log('\n🤖 ========================================');
+console.log('🤖 Gemini AI Initialization');
+console.log('🤖 ========================================');
 if (config.geminiApiKey) {
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     geminiClient = new GoogleGenerativeAI(config.geminiApiKey);
+    console.log('✅ Gemini API Key: SET');
+    console.log(`✅ Gemini Model: ${config.geminiModel}`);
     console.log('✅ Gemini AI initialized successfully');
+    console.log('✅ Will use Gemini as fallback when Node.js sentiment returns 0');
   } catch (error) {
-    console.warn('⚠️  Gemini AI package not available, will use Node.js sentiment only:', error.message);
+    console.warn('⚠️  Gemini AI package not available, will use Node.js sentiment only');
+    console.warn(`⚠️  Error: ${error.message}`);
   }
+} else {
+  console.log('⚠️  Gemini API Key: NOT SET');
+  console.log('⚠️  Will use Node.js sentiment only (no Gemini fallback)');
+  console.log('⚠️  To enable Gemini, set GEMINI_API_KEY in environment variables');
 }
+console.log('🤖 ========================================\n');
 
 // Initialize the sentiment engine once (cheap to reuse)
 const sentimentEngine = new Sentiment();
@@ -225,6 +237,7 @@ function summarizeReactions(reactions = []) {
  */
 async function analyzeWithGemini(text, context = '') {
   if (!geminiClient || !config.geminiApiKey) {
+    console.log('⚠️  Gemini AI not configured, skipping Gemini analysis');
     return 0; // Return 0 if Gemini is not configured
   }
 
@@ -245,25 +258,52 @@ ${context ? `Context from conversation: ${context}\n\n` : ''}Message: "${text}"
 
 Return ONLY the number, nothing else.`;
 
+    console.log('\n🤖 ========================================');
+    console.log('🤖 Gemini AI Analysis Request');
+    console.log('🤖 ========================================');
+    console.log(`🤖 Model: ${config.geminiModel}`);
+    console.log(`🤖 Message: "${trimText(text, 100)}"`);
+    if (context) {
+      console.log(`🤖 Context: "${trimText(context, 100)}"`);
+    }
+    console.log('🤖 Sending request to Gemini API...');
+
     const result = await model.generateContent(prompt);
     const response = result.response;
     const geminiText = response.text().trim();
+    
+    console.log('🤖 ========================================');
+    console.log('🤖 Gemini AI Response');
+    console.log('🤖 ========================================');
+    console.log(`🤖 Raw Response: "${geminiText}"`);
     
     // Extract number from response
     const score = parseFloat(geminiText);
     
     if (Number.isNaN(score)) {
       console.warn(`⚠️  Gemini returned non-numeric value: "${geminiText}", using 0`);
+      console.log('🤖 ========================================\n');
       return 0;
     }
     
     // Clamp score to -3 to +3 range
     const clampedScore = Math.max(-3, Math.min(3, score));
-    console.log(`🤖 Gemini analysis: "${trimText(text, 50)}" → Score: ${clampedScore}`);
+    console.log(`🤖 Parsed Score: ${score}`);
+    console.log(`🤖 Final Score (clamped): ${clampedScore}`);
+    console.log(`🤖 Analysis: "${trimText(text, 50)}" → Score: ${clampedScore >= 0 ? `+${clampedScore}` : clampedScore}`);
+    console.log('🤖 ========================================\n');
     
     return clampedScore;
   } catch (error) {
-    console.error('❌ Gemini analysis failed:', error.message);
+    console.error('\n❌ ========================================');
+    console.error('❌ Gemini AI Analysis Failed');
+    console.error('❌ ========================================');
+    console.error(`❌ Error: ${error.message}`);
+    console.error(`❌ Message: "${trimText(text, 100)}"`);
+    if (error.stack) {
+      console.error(`❌ Stack: ${error.stack}`);
+    }
+    console.error('❌ ========================================\n');
     return 0; // Return 0 on error (fallback to neutral)
   }
 }

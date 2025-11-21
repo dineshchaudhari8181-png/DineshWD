@@ -364,15 +364,27 @@ async function analyzeThreadSentiment(messages = [], reactions = []) {
     let usedGemini = false;
 
     // Use Gemini as fallback if:
-    // 1. Score is 0 (neutral/unclear)
-    // 2. Comparative score is very low (low confidence)
-    // 3. Gemini is configured
-    if (finalScore === 0 && result.comparative === 0 && geminiClient && config.geminiApiKey) {
-      console.log(`  🔄 Node.js sentiment returned 0, trying Gemini AI...`);
+    // 1. Score is 0 or very close to 0 (neutral/unclear) - Node.js sentiment couldn't determine sentiment
+    // 2. Gemini is configured and available
+    const shouldUseGemini = (finalScore === 0 || Math.abs(finalScore) < 0.1) && geminiClient && config.geminiApiKey;
+    
+    if (shouldUseGemini) {
+      console.log(`  🔄 Node.js sentiment returned ${finalScore} (comparative: ${result.comparative}), trying Gemini AI...`);
       const geminiScore = await analyzeWithGemini(text, context);
       if (geminiScore !== 0) {
         finalScore = geminiScore;
         usedGemini = true;
+        console.log(`  ✅ Gemini provided score: ${geminiScore >= 0 ? `+${geminiScore}` : geminiScore}`);
+      } else {
+        console.log(`  ⚠️  Gemini also returned 0, keeping Node.js sentiment score`);
+      }
+    } else if (finalScore === 0 || Math.abs(finalScore) < 0.1) {
+      // Log why Gemini is NOT being used
+      console.log(`  ⚠️  Node.js sentiment returned ${finalScore}, but Gemini is not available:`);
+      if (!config.geminiApiKey) {
+        console.log(`     - GEMINI_API_KEY is not set in environment variables`);
+      } else if (!geminiClient) {
+        console.log(`     - Gemini client failed to initialize`);
       }
     }
 

@@ -241,11 +241,18 @@ async function analyzeWithGemini(text, context = '') {
     return 0; // Return 0 if Gemini is not configured
   }
 
-  try {
-    const model = geminiClient.getGenerativeModel({ model: config.geminiModel });
-    
-    // Build prompt for Gemini
-    const prompt = `Analyze the sentiment of this message and return ONLY a number from -3 to +3:
+  // Try multiple model names as fallback (in case one is deprecated)
+  const modelNamesToTry = [
+    config.geminiModel,  // Try configured model first
+    'gemini-pro',        // Fallback 1: Standard model
+    'gemini-1.5-pro',    // Fallback 2: Latest pro model
+    'gemini-1.5-flash',  // Fallback 3: Latest flash model
+  ];
+
+  let lastError = null;
+  
+  // Build prompt for Gemini (same for all models)
+  const prompt = `Analyze the sentiment of this message and return ONLY a number from -3 to +3:
 - +3 = Very positive
 - +2 = Positive
 - +1 = Slightly positive
@@ -257,55 +264,68 @@ async function analyzeWithGemini(text, context = '') {
 ${context ? `Context from conversation: ${context}\n\n` : ''}Message: "${text}"
 
 Return ONLY the number, nothing else.`;
+  
+  for (const modelName of modelNamesToTry) {
+    try {
+      const model = geminiClient.getGenerativeModel({ model: modelName });
 
-    console.log('\n🤖 ========================================');
-    console.log('🤖 Gemini AI Analysis Request');
-    console.log('🤖 ========================================');
-    console.log(`🤖 Model: ${config.geminiModel}`);
-    console.log(`🤖 Message: "${trimText(text, 100)}"`);
-    if (context) {
-      console.log(`🤖 Context: "${trimText(context, 100)}"`);
-    }
-    console.log('🤖 Sending request to Gemini API...');
+      console.log('\n🤖 ========================================');
+      console.log('🤖 Gemini AI Analysis Request');
+      console.log('🤖 ========================================');
+      console.log(`🤖 Trying Model: ${modelName}`);
+      console.log(`🤖 Message: "${trimText(text, 100)}"`);
+      if (context) {
+        console.log(`🤖 Context: "${trimText(context, 100)}"`);
+      }
+      console.log('🤖 Sending request to Gemini API...');
 
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const geminiText = response.text().trim();
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      const geminiText = response.text().trim();
     
-    console.log('🤖 ========================================');
-    console.log('🤖 Gemini AI Response');
-    console.log('🤖 ========================================');
-    console.log(`🤖 Raw Response: "${geminiText}"`);
-    
-    // Extract number from response
-    const score = parseFloat(geminiText);
-    
-    if (Number.isNaN(score)) {
-      console.warn(`⚠️  Gemini returned non-numeric value: "${geminiText}", using 0`);
+      console.log('🤖 ========================================');
+      console.log('🤖 Gemini AI Response');
+      console.log('🤖 ========================================');
+      console.log(`🤖 Model Used: ${modelName}`);
+      console.log(`🤖 Raw Response: "${geminiText}"`);
+      
+      // Extract number from response
+      const score = parseFloat(geminiText);
+      
+      if (Number.isNaN(score)) {
+        console.warn(`⚠️  Gemini returned non-numeric value: "${geminiText}", using 0`);
+        console.log('🤖 ========================================\n');
+        return 0;
+      }
+      
+      // Clamp score to -3 to +3 range
+      const clampedScore = Math.max(-3, Math.min(3, score));
+      console.log(`🤖 Parsed Score: ${score}`);
+      console.log(`🤖 Final Score (clamped): ${clampedScore}`);
+      console.log(`🤖 Analysis: "${trimText(text, 50)}" → Score: ${clampedScore >= 0 ? `+${clampedScore}` : clampedScore}`);
       console.log('🤖 ========================================\n');
-      return 0;
+      
+      return clampedScore;
+    } catch (error) {
+      // If this model failed, try the next one
+      console.warn(`⚠️  Model "${modelName}" failed: ${error.message}`);
+      lastError = error;
+      continue; // Try next model
     }
-    
-    // Clamp score to -3 to +3 range
-    const clampedScore = Math.max(-3, Math.min(3, score));
-    console.log(`🤖 Parsed Score: ${score}`);
-    console.log(`🤖 Final Score (clamped): ${clampedScore}`);
-    console.log(`🤖 Analysis: "${trimText(text, 50)}" → Score: ${clampedScore >= 0 ? `+${clampedScore}` : clampedScore}`);
-    console.log('🤖 ========================================\n');
-    
-    return clampedScore;
-  } catch (error) {
-    console.error('\n❌ ========================================');
-    console.error('❌ Gemini AI Analysis Failed');
-    console.error('❌ ========================================');
-    console.error(`❌ Error: ${error.message}`);
-    console.error(`❌ Message: "${trimText(text, 100)}"`);
-    if (error.stack) {
-      console.error(`❌ Stack: ${error.stack}`);
-    }
-    console.error('❌ ========================================\n');
-    return 0; // Return 0 on error (fallback to neutral)
   }
+  
+  // If all models failed, log the error
+  console.error('\n❌ ========================================');
+  console.error('❌ Gemini AI Analysis Failed - All Models Tried');
+  console.error('❌ ========================================');
+  console.error(`❌ Last Error: ${lastError?.message || 'Unknown error'}`);
+  console.error(`❌ Message: "${trimText(text, 100)}"`);
+  console.error(`❌ Tried Models: ${modelNamesToTry.join(', ')}`);
+  if (lastError?.stack) {
+    console.error(`❌ Stack: ${lastError.stack}`);
+  }
+  console.error('❌ ========================================\n');
+  return 0; // Return 0 on error (fallback to neutral)
 }
 
 /**

@@ -19,12 +19,17 @@ const config = require('./config');
 
 // Check if bot token is configured
 if (!config.slackBotToken) {
-  console.warn('⚠️  SLACK_BOT_TOKEN is not set. Slack messages cannot be sent.');
+  console.error('❌ ========================================');
+  console.error('❌ SLACK_BOT_TOKEN is not set!');
+  console.error('❌ Please set SLACK_BOT_TOKEN in Render environment variables.');
+  console.error('❌ ========================================');
+} else {
+  console.log('✅ SLACK_BOT_TOKEN is configured');
 }
 
 // Create a Slack client instance
 // This is used to send messages to Slack
-const slackClient = new WebClient(config.slackBotToken);
+const slackClient = new WebClient(config.slackBotToken || '');
 
 /**
  * Build Slack Block Kit blocks for the daily summary message

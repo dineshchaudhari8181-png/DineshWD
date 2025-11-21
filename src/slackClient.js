@@ -18,14 +18,22 @@ const { WebClient } = require('@slack/web-api');
 const config = require('./config');
 
 // Check if bot token is configured
-if (!config.slackBotToken) {
+console.log('\n🔍 ========================================');
+console.log('🔍 Slack Client Initialization');
+console.log('🔍 ========================================');
+console.log(`🔍 SLACK_BOT_TOKEN from env: ${process.env.SLACK_BOT_TOKEN ? 'SET (' + process.env.SLACK_BOT_TOKEN.substring(0, 10) + '...)' : 'NOT SET'}`);
+console.log(`🔍 config.slackBotToken: ${config.slackBotToken ? 'SET (' + config.slackBotToken.substring(0, 10) + '...)' : 'NOT SET'}`);
+console.log(`🔍 Token length: ${config.slackBotToken ? config.slackBotToken.length : 0} characters`);
+
+if (!config.slackBotToken || config.slackBotToken.trim() === '') {
   console.error('❌ ========================================');
-  console.error('❌ SLACK_BOT_TOKEN is not set!');
+  console.error('❌ SLACK_BOT_TOKEN is not set or empty!');
   console.error('❌ Please set SLACK_BOT_TOKEN in Render environment variables.');
   console.error('❌ ========================================');
 } else {
   console.log('✅ SLACK_BOT_TOKEN is configured');
 }
+console.log('🔍 ========================================\n');
 
 // Create a Slack client instance
 // This is used to send messages to Slack

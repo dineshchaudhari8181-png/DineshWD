@@ -74,6 +74,10 @@ const config = {
     password: process.env.DB_PASSWORD || process.env.DB_PASS || '',  // Database password
     ssl: process.env.DB_SSL === 'true',                 // Use SSL encryption (needed for Render)
   },
+  
+  // Gemini AI Configuration (for advanced sentiment analysis fallback)
+  geminiApiKey: process.env.GEMINI_API_KEY || '',       // Google Gemini API key
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-pro', // Gemini model name
 };
 
 // Export the config object so other files can import and use it

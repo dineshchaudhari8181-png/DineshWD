@@ -12,6 +12,19 @@ const Sentiment = require('sentiment');
 const emojiSentimentDataset = require('emoji-sentiment');
 const emoji = require('node-emoji');
 const { slackClient } = require('./slackClient');
+const config = require('./config');
+
+// Gemini AI integration (optional fallback for advanced sentiment analysis)
+let geminiClient = null;
+if (config.geminiApiKey) {
+  try {
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+    geminiClient = new GoogleGenerativeAI(config.geminiApiKey);
+    console.log('✅ Gemini AI initialized successfully');
+  } catch (error) {
+    console.warn('⚠️  Gemini AI package not available, will use Node.js sentiment only:', error.message);
+  }
+}
 
 // Initialize the sentiment engine once (cheap to reuse)
 const sentimentEngine = new Sentiment();
@@ -197,19 +210,79 @@ function summarizeReactions(reactions = []) {
 }
 
 /**
+ * Analyze sentiment using Google Gemini AI as a fallback
+ * 
+ * This function is called when the Node.js sentiment library returns 0 or very low confidence.
+ * Gemini AI can better understand context, slang, and stretched words (e.g., "sooooo badddddddddd").
+ * 
+ * @param {string} text - Message text to analyze
+ * @param {string} context - Optional context (e.g., other messages in thread)
+ * @returns {Promise<number>} - Sentiment score (-3 to +3 scale, similar to Node.js sentiment)
+ * 
+ * @example
+ * await analyzeWithGemini("sooooo badddddddddd", "Previous message context")
+ * // Returns: -2.5 (negative sentiment)
+ */
+async function analyzeWithGemini(text, context = '') {
+  if (!geminiClient || !config.geminiApiKey) {
+    return 0; // Return 0 if Gemini is not configured
+  }
+
+  try {
+    const model = geminiClient.getGenerativeModel({ model: config.geminiModel });
+    
+    // Build prompt for Gemini
+    const prompt = `Analyze the sentiment of this message and return ONLY a number from -3 to +3:
+- +3 = Very positive
+- +2 = Positive
+- +1 = Slightly positive
+- 0 = Neutral
+- -1 = Slightly negative
+- -2 = Negative
+- -3 = Very negative
+
+${context ? `Context from conversation: ${context}\n\n` : ''}Message: "${text}"
+
+Return ONLY the number, nothing else.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const geminiText = response.text().trim();
+    
+    // Extract number from response
+    const score = parseFloat(geminiText);
+    
+    if (Number.isNaN(score)) {
+      console.warn(`⚠️  Gemini returned non-numeric value: "${geminiText}", using 0`);
+      return 0;
+    }
+    
+    // Clamp score to -3 to +3 range
+    const clampedScore = Math.max(-3, Math.min(3, score));
+    console.log(`🤖 Gemini analysis: "${trimText(text, 50)}" → Score: ${clampedScore}`);
+    
+    return clampedScore;
+  } catch (error) {
+    console.error('❌ Gemini analysis failed:', error.message);
+    return 0; // Return 0 on error (fallback to neutral)
+  }
+}
+
+/**
  * Analyze sentiment for all messages in a thread (root message + all replies)
  * 
  * This is the core sentiment analysis function. It:
  * 1. Analyzes each message's text using the sentiment library
- * 2. Calculates reaction sentiment scores
- * 3. Combines text and reaction scores
- * 4. Classifies the overall mood
+ * 2. Uses Gemini AI as fallback for messages that score 0 or have low confidence
+ * 3. Calculates reaction sentiment scores
+ * 4. Combines text and reaction scores
+ * 5. Classifies the overall mood
  * 
  * @param {array} messages - Array of message objects from Slack thread
  *   Each message has: { text: string, ts: string, user: string, thread_ts?: string }
  * @param {array} reactions - Array of reaction objects on the root message
  *   Each reaction has: { name: string, count: number }
- * @returns {object} - Analysis results object with:
+ * @returns {Promise<object>} - Analysis results object with:
  *   - textScore: Total sentiment score from all message text (number)
  *   - reactionScore: Total sentiment score from reactions (number)
  *   - combinedScore: Sum of textScore + reactionScore (number)
@@ -219,13 +292,13 @@ function summarizeReactions(reactions = []) {
  *   - analyzedMessageCount: Number of messages analyzed (number)
  * 
  * @example
- * analyzeThreadSentiment(
+ * await analyzeThreadSentiment(
  *   [{ text: "Great work!", user: "U123", ts: "123.456" }],
  *   [{ name: "thumbsup", count: 3 }]
  * )
  * // Returns: { textScore: 3, reactionScore: 1.5, combinedScore: 4.5, mood: {...}, ... }
  */
-function analyzeThreadSentiment(messages = [], reactions = []) {
+async function analyzeThreadSentiment(messages = [], reactions = []) {
   const messageAnalyses = [];
   let textScore = 0;
 
@@ -233,35 +306,60 @@ function analyzeThreadSentiment(messages = [], reactions = []) {
   console.log('📊 Sentiment Analysis - Individual Messages');
   console.log('📊 ========================================');
 
-  messages.forEach((message, index) => {
+  // Build context from all messages for Gemini (helps with understanding conversation flow)
+  const allTexts = messages.map(m => m?.text?.trim()).filter(Boolean).join(' ');
+  const context = allTexts.length > 200 ? allTexts.substring(0, 200) + '...' : allTexts;
+
+  // Process each message
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
     const text = message?.text?.trim();
     if (!text) {
-      return;
+      continue;
     }
 
+    // First, try Node.js sentiment library
     const result = sentimentEngine.analyze(text);
-    textScore += result.score;
+    let finalScore = result.score;
+    let usedGemini = false;
+
+    // Use Gemini as fallback if:
+    // 1. Score is 0 (neutral/unclear)
+    // 2. Comparative score is very low (low confidence)
+    // 3. Gemini is configured
+    if (finalScore === 0 && result.comparative === 0 && geminiClient && config.geminiApiKey) {
+      console.log(`  🔄 Node.js sentiment returned 0, trying Gemini AI...`);
+      const geminiScore = await analyzeWithGemini(text, context);
+      if (geminiScore !== 0) {
+        finalScore = geminiScore;
+        usedGemini = true;
+      }
+    }
+
+    textScore += finalScore;
 
     const isRoot = message.thread_ts ? message.ts === message.thread_ts : false;
     const messageType = isRoot ? 'Original Message' : `Reply #${index}`;
-    const scoreDisplay = result.score >= 0 ? `+${result.score}` : result.score;
+    const scoreDisplay = finalScore >= 0 ? `+${finalScore.toFixed(1)}` : finalScore.toFixed(1);
+    const methodUsed = usedGemini ? ' (via Gemini AI)' : ' (via Node.js sentiment)';
 
     // Log each message and its score to console
     console.log(`\n${messageType}:`);
     console.log(`  User: ${message.user || 'Unknown'}`);
-    console.log(`  Score: ${scoreDisplay}`);
+    console.log(`  Score: ${scoreDisplay}${methodUsed}`);
     console.log(`  Text: ${trimText(text, 100)}`);
 
     messageAnalyses.push({
       ts: message.ts,
       text: text,
       snippet: trimText(text),
-      score: result.score,
+      score: finalScore,
       comparative: result.comparative,
       userId: message.user,
       isRoot: isRoot,
+      usedGemini: usedGemini,
     });
-  });
+  }
 
   const { reactionScore, summaryText } = summarizeReactions(reactions);
   const combinedScore = textScore + reactionScore;
@@ -688,7 +786,7 @@ async function handleSentimentShortcut(payload) {
 
     // If we have at least the root message, analyze it
     if (threadMessages.length > 0) {
-      const analysis = analyzeThreadSentiment(threadMessages, reactions);
+      const analysis = await analyzeThreadSentiment(threadMessages, reactions);
       
       // If bot wasn't in channel, add a note to the result
       if (notInChannel) {

@@ -308,17 +308,6 @@ function buildResultView(rootMessage, analysis) {
     },
   ];
 
-  // Add warning if bot is not in channel
-  if (notInChannel) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '⚠️ *Limited analysis*: Bot is not in this channel. Only the original message was analyzed. Add the bot to see thread replies and reactions.',
-      },
-    });
-  }
-
   blocks.push(
     {
       type: 'section',
@@ -370,6 +359,19 @@ function buildResultView(rootMessage, analysis) {
       ],
     }
   );
+
+  // Add subtle warning at the bottom if bot is not in channel
+  if (notInChannel) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '⚠️ Limited analysis: Bot not in channel. Only original message analyzed. Add bot for full thread & reactions.',
+        },
+      ],
+    });
+  }
 
   return {
     type: 'modal',

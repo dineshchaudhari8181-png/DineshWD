@@ -155,14 +155,24 @@ function analyzeThreadSentiment(messages = [], reactions = []) {
 }
 
 async function fetchThreadMessages(channelId, rootTs) {
-  const response = await slackClient.conversations.replies({
-    channel: channelId,
-    ts: rootTs,
-    inclusive: true,
-    limit: 50,
-  });
+  try {
+    const response = await slackClient.conversations.replies({
+      channel: channelId,
+      ts: rootTs,
+      inclusive: true,
+      limit: 50,
+    });
 
-  return response.messages || [];
+    return response.messages || [];
+  } catch (error) {
+    // If bot is not in channel, we can't fetch thread messages
+    if (error.data?.error === 'not_in_channel') {
+      throw new Error('not_in_channel');
+    }
+    // For other errors, log and return empty array (we'll still analyze the root message)
+    console.warn('⚠️  Unable to fetch thread messages:', error.message);
+    return [];
+  }
 }
 
 async function fetchRootReactions(channelId, rootTs) {
@@ -215,6 +225,9 @@ function buildLoadingView(rootMessage) {
 }
 
 function buildErrorView(errorMessage, rootMessage) {
+  // Special handling for "not_in_channel" error
+  const isNotInChannel = errorMessage === 'not_in_channel';
+  
   return {
     type: 'modal',
     callback_id: 'sentiment_score_error',
@@ -231,14 +244,18 @@ function buildErrorView(errorMessage, rootMessage) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '⚠️ *Unable to calculate sentiment right now.*',
+          text: isNotInChannel
+            ? '⚠️ *Bot not in channel*'
+            : '⚠️ *Unable to calculate sentiment right now.*',
         },
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `Reason: \`${errorMessage}\``,
+          text: isNotInChannel
+            ? 'The bot needs to be added to this channel to analyze sentiment. Please invite <@DailyEngage> to the channel first.'
+            : `Reason: \`${errorMessage}\``,
         },
       },
       {
@@ -255,7 +272,7 @@ function buildErrorView(errorMessage, rootMessage) {
 }
 
 function buildResultView(rootMessage, analysis) {
-  const { mood, combinedScore, textScore, reactionScore, reactionSummaryText, messageAnalyses, analyzedMessageCount } =
+  const { mood, combinedScore, textScore, reactionScore, reactionSummaryText, messageAnalyses, analyzedMessageCount, notInChannel } =
     analysis;
 
   const formattedCombined = combinedScore.toFixed(1);
@@ -271,6 +288,89 @@ function buildResultView(rootMessage, analysis) {
     },
   }));
 
+  // Build the blocks array
+  const blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${mood.emoji} *Overall mood:* ${mood.label}\n*Combined score:* ${formattedCombined}`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `Text score: ${formattedTextScore} • Reaction adjustment: ${formattedReactionScore} • ${analyzedMessageCount} messages analyzed`,
+        },
+      ],
+    },
+  ];
+
+  // Add warning if bot is not in channel
+  if (notInChannel) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '⚠️ *Limited analysis*: Bot is not in this channel. Only the original message was analyzed. Add the bot to see thread replies and reactions.',
+      },
+    });
+  }
+
+  blocks.push(
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Message preview*\n${trimText(rootMessage.text, 180)}`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `Posted by ${formatUser(rootMessage.userId)} in <#${rootMessage.channelId}>`,
+        },
+      ],
+    },
+    {
+      type: 'divider',
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Reactions overview*\n${reactionSummaryText}`,
+      },
+    },
+    {
+      type: 'divider',
+    },
+    ...(replyBlocks.length
+      ? replyBlocks
+      : [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'No replies yet — sentiment is based only on the original message.',
+            },
+          },
+        ]),
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '🔒 Sentiment is calculated on demand and not stored anywhere.',
+        },
+      ],
+    }
+  );
+
   return {
     type: 'modal',
     callback_id: 'sentiment_score_result',
@@ -282,73 +382,7 @@ function buildResultView(rootMessage, analysis) {
       type: 'plain_text',
       text: 'Close',
     },
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `${mood.emoji} *Overall mood:* ${mood.label}\n*Combined score:* ${formattedCombined}`,
-        },
-      },
-      {
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: `Text score: ${formattedTextScore} • Reaction adjustment: ${formattedReactionScore} • ${analyzedMessageCount} messages analyzed`,
-          },
-        ],
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Message preview*\n${trimText(rootMessage.text, 180)}`,
-        },
-      },
-      {
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: `Posted by ${formatUser(rootMessage.userId)} in <#${rootMessage.channelId}>`,
-          },
-        ],
-      },
-      {
-        type: 'divider',
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Reactions overview*\n${reactionSummaryText}`,
-        },
-      },
-      {
-        type: 'divider',
-      },
-      ...(replyBlocks.length
-        ? replyBlocks
-        : [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: 'No replies yet — sentiment is based only on the original message.',
-              },
-            },
-          ]),
-      {
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: '🔒 Sentiment is calculated on demand and not stored anywhere.',
-          },
-        ],
-      },
-    ],
+    blocks,
   };
 }
 
@@ -394,25 +428,62 @@ async function handleSentimentShortcut(payload) {
   const viewHash = openedView?.view?.hash;
 
   try {
-    const [threadMessages, reactions] = await Promise.all([
-      fetchThreadMessages(channelId, rootTs),
-      fetchRootReactions(channelId, rootTs),
-    ]);
+    let threadMessages = [];
+    let reactions = [];
+    let notInChannel = false;
 
-    const analysis = analyzeThreadSentiment(threadMessages, reactions);
-    const resultView = buildResultView(rootMessage, analysis);
+    try {
+      // Try to fetch thread messages and reactions
+      [threadMessages, reactions] = await Promise.all([
+        fetchThreadMessages(channelId, rootTs),
+        fetchRootReactions(channelId, rootTs),
+      ]);
+    } catch (fetchError) {
+      // If we can't fetch because bot is not in channel, try to analyze just the root message
+      if (fetchError.message === 'not_in_channel') {
+        notInChannel = true;
+        // Create a minimal message object from the payload for analysis
+        if (rootMessage.text && rootMessage.text !== 'No text content') {
+          threadMessages = [
+            {
+              ts: rootTs,
+              text: rootMessage.text,
+              user: rootMessage.userId,
+            },
+          ];
+        }
+      } else {
+        throw fetchError;
+      }
+    }
 
-    if (viewId) {
-      await slackClient.views.update({
-        view_id: viewId,
-        hash: viewHash,
-        view: resultView,
-      });
+    // If we have at least the root message, analyze it
+    if (threadMessages.length > 0) {
+      const analysis = analyzeThreadSentiment(threadMessages, reactions);
+      
+      // If bot wasn't in channel, add a note to the result
+      if (notInChannel) {
+        analysis.notInChannel = true;
+        analysis.limitedAnalysis = true;
+      }
+      
+      const resultView = buildResultView(rootMessage, analysis);
+
+      if (viewId) {
+        await slackClient.views.update({
+          view_id: viewId,
+          hash: viewHash,
+          view: resultView,
+        });
+      } else {
+        await slackClient.views.open({
+          trigger_id: triggerId,
+          view: resultView,
+        });
+      }
     } else {
-      await slackClient.views.open({
-        trigger_id: triggerId,
-        view: resultView,
-      });
+      // No message text available, show error
+      throw new Error('not_in_channel');
     }
   } catch (error) {
     console.error('❌ Sentiment analysis failed:', error);

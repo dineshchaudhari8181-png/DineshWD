@@ -242,12 +242,14 @@ async function analyzeWithGemini(text, context = '') {
   }
 
   // Try multiple model names as fallback (in case one is deprecated)
+  // Remove duplicates and try in order
   const modelNamesToTry = [
-    config.geminiModel,  // Try configured model first
-    'gemini-pro',        // Fallback 1: Standard model
-    'gemini-1.5-pro',    // Fallback 2: Latest pro model
-    'gemini-1.5-flash',  // Fallback 3: Latest flash model
-  ];
+    config.geminiModel,      // Try configured model first
+    'gemini-2.5-flash',     // Fallback 1: Latest flash model (2.5)
+    'gemini-1.5-flash',     // Fallback 2: Flash model (1.5)
+    'gemini-1.5-pro',       // Fallback 3: Pro model (1.5)
+    'gemini-pro',           // Fallback 4: Standard model
+  ].filter((model, index, self) => self.indexOf(model) === index); // Remove duplicates
 
   let lastError = null;
   

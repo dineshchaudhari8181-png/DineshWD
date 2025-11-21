@@ -77,7 +77,7 @@ const config = {
   
   // Gemini AI Configuration (for advanced sentiment analysis fallback)
   geminiApiKey: process.env.GEMINI_API_KEY || '',                    // Google Gemini API key
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-pro',            // Gemini model name (gemini-pro is the stable model)
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',     // Gemini model name (default: gemini-2.5-flash)
 };
 
 // Export the config object so other files can import and use it

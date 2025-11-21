@@ -157,7 +157,8 @@ async function postSummary(summary) {
   return response.ts;
 }
 
-// Export the function so other files can use it
+// Export functions and client so other modules can reuse the Slack Web API instance
 module.exports = {
-  postSummary,  // Function to post summary to Slack
+  postSummary,   // Function to post summary to Slack
+  slackClient,   // Re-exported Slack WebClient for other features (e.g., modals)
 };

@@ -9,14 +9,57 @@
  */
 
 const Sentiment = require('sentiment');
+const emojiSentimentDataset = require('emoji-sentiment');
+const emoji = require('node-emoji');
 const { slackClient } = require('./slackClient');
 
 // Initialize the sentiment engine once (cheap to reuse)
 const sentimentEngine = new Sentiment();
 
-// Simple emoji buckets that influence the overall score
-const POSITIVE_REACTIONS = new Set(['thumbsup', 'heart', 'clap', 'smile', 'grinning', 'tada', 'white_check_mark', 'rocket']);
-const NEGATIVE_REACTIONS = new Set(['thumbsdown', 'rage', 'angry', 'cry', 'sob', 'confused', 'broken_heart']);
+// Build a lookup map of emoji character -> sentiment score from the dataset
+const emojiScoreMap = new Map(
+  emojiSentimentDataset.map((entry) => {
+    const codePoints = entry.sequence.split('-').map((value) => parseInt(value, 16));
+    const emojiChar = String.fromCodePoint(...codePoints);
+    return [emojiChar, entry.score];
+  })
+);
+
+// Some Slack reaction names don't match node-emoji's dictionary, so we provide aliases
+const REACTION_ALIAS = {
+  thumbsup: '👍',
+  thumbsdown: '👎',
+  '+1': '👍',
+  '-1': '👎',
+  simple_smile: '🙂',
+  slightly_smiling_face: '🙂',
+  white_check_mark: '✅',
+  heavy_check_mark: '✔️',
+};
+
+function getEmojiCharacterFromReaction(name = '') {
+  if (!name) {
+    return null;
+  }
+  const normalized = name.toLowerCase();
+  const baseName = normalized.split('::')[0]; // strip skin tone modifiers if present
+  return emoji.get(baseName) || REACTION_ALIAS[baseName] || null;
+}
+
+function getReactionSentimentDelta(name, count = 0) {
+  const emojiChar = getEmojiCharacterFromReaction(name);
+  if (!emojiChar) {
+    return 0;
+  }
+
+  const score = emojiScoreMap.get(emojiChar);
+  if (typeof score !== 'number') {
+    return 0;
+  }
+
+  // Multiply by reaction count so each user reaction contributes to the adjustment
+  return score * count;
+}
 
 /**
  * Ensure we trim text for modal display (Slack recommends keeping sections short).
@@ -58,12 +101,7 @@ function summarizeReactions(reactions = []) {
   const summaryParts = reactions.slice(0, 8).map((reaction) => {
     const name = reaction.name || 'reaction';
     const count = reaction.count || 0;
-
-    if (POSITIVE_REACTIONS.has(name)) {
-      reactionScore += count * 0.5; // modest boost
-    } else if (NEGATIVE_REACTIONS.has(name)) {
-      reactionScore -= count * 0.5; // modest penalty
-    }
+    reactionScore += getReactionSentimentDelta(name, count);
 
     return `:${name}: ×${count}`;
   });

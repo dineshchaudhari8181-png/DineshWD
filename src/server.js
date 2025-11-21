@@ -257,24 +257,55 @@ app.post('/api/slack/run-summary', async (req, res) => {
   }
 });
 
+/**
+ * Slack Slash Command endpoint
+ * 
+ * POST /api/slack/command
+ * 
+ * This endpoint handles the `/dailyengage` slash command in Slack.
+ * When a user types `/dailyengage` in any channel, Slack sends a request here.
+ * 
+ * Flow:
+ * 1. User types `/dailyengage` in a channel
+ * 2. Slack sends a URL-encoded payload to this endpoint
+ * 3. We immediately respond with an ephemeral message (only visible to the user)
+ * 4. We run the daily summary job for that channel (yesterday's data)
+ * 5. The summary is posted to the channel where the command was used
+ * 
+ * Request body (URL-encoded):
+ * - command: The slash command name (e.g., "/dailyengage")
+ * - channel_id: Channel where the command was used
+ * - user_id: User who triggered the command
+ * 
+ * Response:
+ * - Immediate ephemeral response (user sees "Collecting stats...")
+ * - Summary is posted to the channel asynchronously
+ */
 app.post(
   '/api/slack/command',
-  bodyParser.urlencoded({ extended: true }),
+  bodyParser.urlencoded({ extended: true }),  // Parse URL-encoded form data
   async (req, res) => {
+    // Extract command, channel ID, and user ID from request body
     const { command, channel_id: channelId, user_id: userId } = req.body || {};
 
+    // Only support /dailyengage command
     if (command !== '/dailyengage') {
       return res.json({
-        response_type: 'ephemeral',
+        response_type: 'ephemeral',  // Only visible to the user who ran the command
         text: 'Only /dailyengage is supported.',
       });
     }
 
+    // Immediately respond to Slack (within 3 seconds)
+    // This prevents Slack from showing an error
     res.json({
-      response_type: 'ephemeral',
+      response_type: 'ephemeral',  // Only visible to the user
       text: `✅ Collecting yesterday's stats for <#${channelId}>...`,
     });
 
+    // Run the summary job asynchronously (after responding to Slack)
+    // defaultToToday: false means use yesterday's data
+    // channelId: Use the channel where the command was run (not the default channel)
     try {
       await runDailySummaryJob({ defaultToToday: false, channelId });
       console.log(`Slash command triggered by ${userId} in ${channelId}.`);

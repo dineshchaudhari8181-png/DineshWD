@@ -37,6 +37,20 @@ const REACTION_ALIAS = {
   heavy_check_mark: '✔️',
 };
 
+/**
+ * Convert a Slack reaction name to its Unicode emoji character
+ * 
+ * Slack reactions use names like "thumbsup", "+1", "smile", etc.
+ * This function converts those names to actual emoji characters (👍, 😊, etc.)
+ * 
+ * @param {string} name - Slack reaction name (e.g., "thumbsup", "+1", "smile")
+ * @returns {string|null} - Unicode emoji character (e.g., "👍") or null if not found
+ * 
+ * @example
+ * getEmojiCharacterFromReaction("thumbsup")  // Returns "👍"
+ * getEmojiCharacterFromReaction("+1")        // Returns "👍"
+ * getEmojiCharacterFromReaction("unknown")   // Returns null
+ */
 function getEmojiCharacterFromReaction(name = '') {
   if (!name) {
     return null;
@@ -46,6 +60,21 @@ function getEmojiCharacterFromReaction(name = '') {
   return emoji.get(baseName) || REACTION_ALIAS[baseName] || null;
 }
 
+/**
+ * Calculate sentiment score contribution from a reaction
+ * 
+ * Each emoji has a sentiment score (positive, negative, or neutral).
+ * This function multiplies the emoji's base score by the number of times it was used.
+ * 
+ * @param {string} name - Slack reaction name (e.g., "thumbsup", "heart")
+ * @param {number} count - Number of times this reaction was used (default: 0)
+ * @returns {number} - Sentiment score contribution (positive, negative, or 0)
+ * 
+ * @example
+ * getReactionSentimentDelta("thumbsup", 5)  // Returns positive score × 5
+ * getReactionSentimentDelta("heart", 3)     // Returns positive score × 3
+ * getReactionSentimentDelta("unknown", 2)   // Returns 0 (emoji not in dataset)
+ */
 function getReactionSentimentDelta(name, count = 0) {
   const emojiChar = getEmojiCharacterFromReaction(name);
   if (!emojiChar) {
@@ -62,7 +91,19 @@ function getReactionSentimentDelta(name, count = 0) {
 }
 
 /**
- * Ensure we trim text for modal display (Slack recommends keeping sections short).
+ * Trim text to a maximum length for display in Slack modals
+ * 
+ * Slack modals have limited space, so we need to truncate long messages.
+ * This function ensures text fits within the modal display.
+ * 
+ * @param {string} text - Text to trim
+ * @param {number} max - Maximum length (default: 180 characters)
+ * @returns {string} - Trimmed text with "..." if truncated, or fallback message if empty
+ * 
+ * @example
+ * trimText("This is a very long message...", 20)  // Returns "This is a very lo..."
+ * trimText("Short", 20)                          // Returns "Short"
+ * trimText("", 20)                               // Returns "No text content detected."
  */
 function trimText(text = '', max = 180) {
   const normalized = text.trim();
@@ -72,12 +113,39 @@ function trimText(text = '', max = 180) {
   return `${normalized.slice(0, max - 3)}...`;
 }
 
+/**
+ * Format a Slack user ID for display in messages
+ * 
+ * Converts a user ID (e.g., "U12345") to a Slack mention format (e.g., "<@U12345>")
+ * When displayed in Slack, this will show as the user's name and be clickable.
+ * 
+ * @param {string} userId - Slack user ID (e.g., "U12345")
+ * @returns {string} - Formatted user mention (e.g., "<@U12345>") or "Someone" if no ID
+ * 
+ * @example
+ * formatUser("U12345")  // Returns "<@U12345>"
+ * formatUser(null)      // Returns "Someone"
+ */
 function formatUser(userId) {
   return userId ? `<@${userId}>` : 'Someone';
 }
 
 /**
- * Classify the combined sentiment score into human-friendly labels.
+ * Classify a sentiment score into a human-friendly mood label
+ * 
+ * Converts a numeric sentiment score into a category (Positive, Negative, Neutral)
+ * with an emoji and color for display in the modal.
+ * 
+ * @param {number} score - Combined sentiment score (can be positive, negative, or zero)
+ * @returns {object} - Object with label, emoji, and color
+ *   - label: "Positive" (score >= 3), "Negative" (score <= -3), or "Neutral" (otherwise)
+ *   - emoji: Corresponding emoji (😄, 😟, or 😐)
+ *   - color: Hex color code for display
+ * 
+ * @example
+ * classifyMood(5)   // Returns { label: "Positive", emoji: "😄", color: "#2EB67D" }
+ * classifyMood(-4)  // Returns { label: "Negative", emoji: "😟", color: "#E01E5A" }
+ * classifyMood(0)   // Returns { label: "Neutral", emoji: "😐", color: "#ECB22E" }
  */
 function classifyMood(score) {
   if (score >= 3) {
@@ -90,7 +158,23 @@ function classifyMood(score) {
 }
 
 /**
- * Score reactions to provide a tiny boost/penalty to the sentiment score.
+ * Calculate total sentiment score from all reactions and create a summary text
+ * 
+ * Iterates through all reactions on a message, calculates their sentiment contribution,
+ * and creates a human-readable summary (e.g., ":thumbsup: ×5 • :heart: ×3").
+ * 
+ * @param {array} reactions - Array of reaction objects from Slack
+ *   Each reaction has: { name: string, count: number }
+ * @returns {object} - Object with:
+ *   - reactionScore: Total sentiment score from all reactions (number)
+ *   - summaryText: Human-readable summary (e.g., ":thumbsup: ×5 • :heart: ×3")
+ * 
+ * @example
+ * summarizeReactions([
+ *   { name: "thumbsup", count: 5 },
+ *   { name: "heart", count: 3 }
+ * ])
+ * // Returns: { reactionScore: 8.5, summaryText: ":thumbsup: ×5 • :heart: ×3" }
  */
 function summarizeReactions(reactions = []) {
   if (!Array.isArray(reactions) || reactions.length === 0) {
@@ -113,13 +197,43 @@ function summarizeReactions(reactions = []) {
 }
 
 /**
- * Run sentiment analysis over every message in the thread (root + replies).
+ * Analyze sentiment for all messages in a thread (root message + all replies)
+ * 
+ * This is the core sentiment analysis function. It:
+ * 1. Analyzes each message's text using the sentiment library
+ * 2. Calculates reaction sentiment scores
+ * 3. Combines text and reaction scores
+ * 4. Classifies the overall mood
+ * 
+ * @param {array} messages - Array of message objects from Slack thread
+ *   Each message has: { text: string, ts: string, user: string, thread_ts?: string }
+ * @param {array} reactions - Array of reaction objects on the root message
+ *   Each reaction has: { name: string, count: number }
+ * @returns {object} - Analysis results object with:
+ *   - textScore: Total sentiment score from all message text (number)
+ *   - reactionScore: Total sentiment score from reactions (number)
+ *   - combinedScore: Sum of textScore + reactionScore (number)
+ *   - mood: Mood classification object { label, emoji, color }
+ *   - reactionSummaryText: Human-readable reaction summary (string)
+ *   - messageAnalyses: Array of individual message analysis results
+ *   - analyzedMessageCount: Number of messages analyzed (number)
+ * 
+ * @example
+ * analyzeThreadSentiment(
+ *   [{ text: "Great work!", user: "U123", ts: "123.456" }],
+ *   [{ name: "thumbsup", count: 3 }]
+ * )
+ * // Returns: { textScore: 3, reactionScore: 1.5, combinedScore: 4.5, mood: {...}, ... }
  */
 function analyzeThreadSentiment(messages = [], reactions = []) {
   const messageAnalyses = [];
   let textScore = 0;
 
-  messages.forEach((message) => {
+  console.log('\n📊 ========================================');
+  console.log('📊 Sentiment Analysis - Individual Messages');
+  console.log('📊 ========================================');
+
+  messages.forEach((message, index) => {
     const text = message?.text?.trim();
     if (!text) {
       return;
@@ -128,6 +242,16 @@ function analyzeThreadSentiment(messages = [], reactions = []) {
     const result = sentimentEngine.analyze(text);
     textScore += result.score;
 
+    const isRoot = message.thread_ts ? message.ts === message.thread_ts : false;
+    const messageType = isRoot ? 'Original Message' : `Reply #${index}`;
+    const scoreDisplay = result.score >= 0 ? `+${result.score}` : result.score;
+
+    // Log each message and its score to console
+    console.log(`\n${messageType}:`);
+    console.log(`  User: ${message.user || 'Unknown'}`);
+    console.log(`  Score: ${scoreDisplay}`);
+    console.log(`  Text: ${trimText(text, 100)}`);
+
     messageAnalyses.push({
       ts: message.ts,
       text: text,
@@ -135,13 +259,23 @@ function analyzeThreadSentiment(messages = [], reactions = []) {
       score: result.score,
       comparative: result.comparative,
       userId: message.user,
-      isRoot: message.thread_ts ? message.ts === message.thread_ts : false,
+      isRoot: isRoot,
     });
   });
 
   const { reactionScore, summaryText } = summarizeReactions(reactions);
   const combinedScore = textScore + reactionScore;
   const mood = classifyMood(combinedScore);
+
+  // Log summary
+  console.log('\n📊 ========================================');
+  console.log('📊 Summary:');
+  console.log(`📊 Total Messages Analyzed: ${messageAnalyses.length}`);
+  console.log(`📊 Text Score: ${textScore >= 0 ? `+${textScore.toFixed(1)}` : textScore.toFixed(1)}`);
+  console.log(`📊 Reaction Score: ${reactionScore >= 0 ? `+${reactionScore.toFixed(1)}` : reactionScore.toFixed(1)}`);
+  console.log(`📊 Combined Score: ${combinedScore >= 0 ? `+${combinedScore.toFixed(1)}` : combinedScore.toFixed(1)}`);
+  console.log(`📊 Overall Mood: ${mood.emoji} ${mood.label}`);
+  console.log('📊 ========================================\n');
 
   return {
     textScore,
@@ -154,6 +288,21 @@ function analyzeThreadSentiment(messages = [], reactions = []) {
   };
 }
 
+/**
+ * Fetch all messages in a thread from Slack
+ * 
+ * Uses Slack Web API to retrieve the root message and all replies in a thread.
+ * This requires the bot to be in the channel.
+ * 
+ * @param {string} channelId - Slack channel ID (e.g., "C09SUH2KHK2")
+ * @param {string} rootTs - Root message timestamp (e.g., "1234567890.123456")
+ * @returns {array} - Array of message objects from the thread
+ * @throws {Error} - Throws "not_in_channel" error if bot is not in the channel
+ * 
+ * @example
+ * await fetchThreadMessages("C09SUH2KHK2", "1234567890.123456")
+ * // Returns: [{ text: "Hello", ts: "123.456", user: "U123", ... }, ...]
+ */
 async function fetchThreadMessages(channelId, rootTs) {
   try {
     const response = await slackClient.conversations.replies({
@@ -175,6 +324,21 @@ async function fetchThreadMessages(channelId, rootTs) {
   }
 }
 
+/**
+ * Fetch all reactions on the root message from Slack
+ * 
+ * Uses Slack Web API to retrieve all emoji reactions on a message.
+ * Returns empty array if there are no reactions or if the API call fails.
+ * 
+ * @param {string} channelId - Slack channel ID (e.g., "C09SUH2KHK2")
+ * @param {string} rootTs - Root message timestamp (e.g., "1234567890.123456")
+ * @returns {array} - Array of reaction objects, or empty array if none/failed
+ *   Each reaction has: { name: string, count: number, users: array }
+ * 
+ * @example
+ * await fetchRootReactions("C09SUH2KHK2", "1234567890.123456")
+ * // Returns: [{ name: "thumbsup", count: 5, users: [...] }, ...]
+ */
 async function fetchRootReactions(channelId, rootTs) {
   try {
     const response = await slackClient.reactions.get({
@@ -191,6 +355,21 @@ async function fetchRootReactions(channelId, rootTs) {
   }
 }
 
+/**
+ * Build a Slack Block Kit modal view for the "loading" state
+ * 
+ * This modal is shown immediately when the user clicks the sentiment shortcut.
+ * It displays "Analyzing..." while we fetch data and calculate sentiment.
+ * 
+ * @param {object} rootMessage - Root message object with text and userId
+ *   - text: Message text content
+ *   - userId: User who posted the message
+ * @returns {object} - Slack Block Kit modal view object
+ * 
+ * @example
+ * buildLoadingView({ text: "Hello world", userId: "U123" })
+ * // Returns: { type: "modal", title: {...}, blocks: [...] }
+ */
 function buildLoadingView(rootMessage) {
   return {
     type: 'modal',
@@ -224,6 +403,20 @@ function buildLoadingView(rootMessage) {
   };
 }
 
+/**
+ * Build a Slack Block Kit modal view for error states
+ * 
+ * This modal is shown when sentiment analysis fails (e.g., bot not in channel,
+ * API errors, etc.). It displays a user-friendly error message.
+ * 
+ * @param {string} errorMessage - Error message or error code (e.g., "not_in_channel")
+ * @param {object} rootMessage - Root message object with text and userId
+ * @returns {object} - Slack Block Kit modal view object with error message
+ * 
+ * @example
+ * buildErrorView("not_in_channel", { text: "Hello", userId: "U123" })
+ * // Returns: { type: "modal", title: {...}, blocks: [error message blocks] }
+ */
 function buildErrorView(errorMessage, rootMessage) {
   // Special handling for "not_in_channel" error
   const isNotInChannel = errorMessage === 'not_in_channel';
@@ -271,22 +464,44 @@ function buildErrorView(errorMessage, rootMessage) {
   };
 }
 
+/**
+ * Build a Slack Block Kit modal view displaying sentiment analysis results
+ * 
+ * This is the main result modal that shows:
+ * - Overall mood (Positive/Negative/Neutral) with emoji
+ * - Combined sentiment score
+ * - Breakdown of text score vs reaction score
+ * - Message preview
+ * - Reactions overview
+ * 
+ * @param {object} rootMessage - Root message object
+ *   - text: Message text content
+ *   - userId: User who posted the message
+ *   - channelId: Channel where message was posted
+ * @param {object} analysis - Sentiment analysis results from analyzeThreadSentiment()
+ *   - mood: Mood classification { label, emoji, color }
+ *   - combinedScore: Total sentiment score
+ *   - textScore: Score from message text
+ *   - reactionScore: Score from reactions
+ *   - reactionSummaryText: Human-readable reaction summary
+ *   - analyzedMessageCount: Number of messages analyzed
+ *   - notInChannel: Optional flag indicating limited analysis
+ * @returns {object} - Slack Block Kit modal view object with results
+ * 
+ * @example
+ * buildResultView(
+ *   { text: "Great work!", userId: "U123", channelId: "C09SUH2KHK2" },
+ *   { mood: { label: "Positive", emoji: "😄" }, combinedScore: 5, ... }
+ * )
+ * // Returns: { type: "modal", title: {...}, blocks: [result blocks] }
+ */
 function buildResultView(rootMessage, analysis) {
-  const { mood, combinedScore, textScore, reactionScore, reactionSummaryText, messageAnalyses, analyzedMessageCount, notInChannel } =
+  const { mood, combinedScore, textScore, reactionScore, reactionSummaryText, analyzedMessageCount, notInChannel } =
     analysis;
 
   const formattedCombined = combinedScore.toFixed(1);
   const formattedTextScore = textScore.toFixed(1);
   const formattedReactionScore = reactionScore >= 0 ? `+${reactionScore.toFixed(1)}` : reactionScore.toFixed(1);
-  const replyBlocks = messageAnalyses.slice(0, 4).map((details, index) => ({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*${details.isRoot ? 'Original message' : `Reply #${index}`}* by ${formatUser(details.userId)} • Score: ${
-        details.score >= 0 ? `+${details.score}` : details.score
-      }\n>${details.snippet}`,
-    },
-  }));
 
   // Build the blocks array
   const blocks = [
@@ -302,7 +517,7 @@ function buildResultView(rootMessage, analysis) {
       elements: [
         {
           type: 'mrkdwn',
-          text: `Text score: ${formattedTextScore} • Reaction adjustment: ${formattedReactionScore} • ${analyzedMessageCount} messages analyzed`,
+          text: `${analyzedMessageCount} messages analyzed`,
         },
       ],
     },
@@ -335,20 +550,6 @@ function buildResultView(rootMessage, analysis) {
         text: `*Reactions overview*\n${reactionSummaryText}`,
       },
     },
-    {
-      type: 'divider',
-    },
-    ...(replyBlocks.length
-      ? replyBlocks
-      : [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: 'No replies yet — sentiment is based only on the original message.',
-            },
-          },
-        ]),
     {
       type: 'context',
       elements: [
@@ -389,7 +590,33 @@ function buildResultView(rootMessage, analysis) {
 }
 
 /**
- * Main entry point invoked by server.js when Slack triggers the shortcut.
+ * Main entry point for sentiment analysis shortcut
+ * 
+ * This function is called by server.js when a user clicks the "Sentiment Score"
+ * message shortcut in Slack. It orchestrates the entire sentiment analysis flow:
+ * 
+ * 1. Validates the payload and extracts message/channel info
+ * 2. Opens a loading modal immediately (to avoid Slack's 3-second timeout)
+ * 3. Fetches thread messages and reactions from Slack
+ * 4. Performs sentiment analysis on all messages
+ * 5. Updates the modal with results (or error message)
+ * 
+ * If the bot is not in the channel, it falls back to analyzing just the root message
+ * from the payload (limited analysis).
+ * 
+ * @param {object} payload - Slack shortcut payload from the message action
+ *   - trigger_id: Unique ID for opening the modal (required)
+ *   - channel: Channel object with id (required)
+ *   - message: Message object with text, ts, thread_ts, user (required)
+ * @throws {Error} - Throws error if payload is invalid or missing required fields
+ * 
+ * @example
+ * await handleSentimentShortcut({
+ *   trigger_id: "123.456",
+ *   channel: { id: "C09SUH2KHK2" },
+ *   message: { text: "Hello", ts: "123.456", user: "U123" }
+ * })
+ * // Opens modal, analyzes sentiment, updates modal with results
  */
 async function handleSentimentShortcut(payload) {
   if (!payload) {

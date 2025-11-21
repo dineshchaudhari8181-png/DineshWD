@@ -133,11 +133,32 @@ function buildSummaryBlocks(summary) {
 /**
  * Post the daily summary to Slack
  * 
+ * This function sends a formatted daily summary message to a Slack channel.
+ * The channel can be specified in the summary object (for slash commands) or
+ * defaults to the configured channel ID.
+ * 
  * @param {object} summary - Summary data with all counts
+ *   - channelId: Optional channel ID (if not provided, uses config.slackChannelId)
+ *   - statDate: Date string (YYYY-MM-DD format)
+ *   - messageCount: Number of messages
+ *   - reactionCount: Number of reactions
+ *   - fileUploadCount: Number of file uploads
+ *   - newMemberCount: Number of new members
+ *   - memberRemovedCount: Number of members who left
  * @returns {string|null} - Slack message timestamp (ts) or null if failed
  * 
- * The message timestamp (ts) is like a unique ID for the message.
+ * The message timestamp (ts) is like a unique ID for the message (e.g., "1234567890.123456").
  * We save it to the database so we can reference this message later.
+ * 
+ * @example
+ * await postSummary({
+ *   channelId: "C09SUH2KHK2",  // Optional: overrides default channel
+ *   statDate: "2024-01-15",
+ *   messageCount: 150,
+ *   reactionCount: 25,
+ *   ...
+ * })
+ * // Returns: "1234567890.123456" (message timestamp)
  */
 async function postSummary(summary) {
   if (!config.slackBotToken) {
@@ -152,17 +173,20 @@ async function postSummary(summary) {
   // This is shown if Block Kit rendering fails or in notifications
   const text = `Daily summary for ${summary.statDate}: ${summary.messageCount} messages, ${summary.reactionCount} reactions, ${summary.fileUploadCount} files, ${summary.newMemberCount} new members, ${summary.memberRemovedCount} members removed.`;
 
-  // Send the message to Slack using the Web API
+  // Determine which channel to post to:
+  // 1. Use channelId from summary (if provided - for slash commands)
+  // 2. Otherwise, use the default channel from config
   const targetChannel = summary.channelId || config.slackChannelId;
   if (!targetChannel) {
     console.warn('⚠️  No channel provided for summary post.');
     return null;
   }
 
+  // Send the message to Slack using the Web API
   const response = await slackClient.chat.postMessage({
-    channel: targetChannel,
-    text,                             // Plain text fallback
-    blocks,                           // Block Kit formatted message
+    channel: targetChannel,  // Channel ID (e.g., "C09SUH2KHK2")
+    text,                    // Plain text fallback
+    blocks,                  // Block Kit formatted message
   });
 
   // Return the message timestamp (ts)

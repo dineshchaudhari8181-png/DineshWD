@@ -32,3 +32,6 @@ build/
 tmp/
 temp/
 
+# Separate sentiment service project (has its own git repo)
+sentiment-service/
+

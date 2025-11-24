@@ -23,7 +23,6 @@ const config = require('./config');                    // Configuration settings
 const { initDb } = require('./db');                    // Database initialization
 const { processSlackEvent } = require('./eventsHandler');  // Event processing
 const { scheduleDailySummary, runDailySummaryJob } = require('./scheduler');  // Scheduler
-const { handleSentimentShortcut } = require('./sentimentService');           // Modal-based sentiment analysis
 
 // Create an Express application instance
 // This is our web server
@@ -311,43 +310,6 @@ app.post(
       console.log(`Slash command triggered by ${userId} in ${channelId}.`);
     } catch (error) {
       console.error('Failed to run summary via slash command:', error);
-    }
-  }
-);
-
-/**
- * Slack message shortcut endpoint for "Sentiment Score"
- *
- * Slack sends a URL-encoded payload that contains message + channel info.
- * Flow:
- * 1. Parse payload and acknowledge Slack (200 OK) immediately.
- * 2. Trigger handleSentimentShortcut, which opens a modal and updates it with results.
- */
-app.post(
-  '/api/slack/sentiment',
-  bodyParser.urlencoded({ extended: true }),
-  async (req, res) => {
-    const { payload } = req.body || {};
-
-    if (!payload) {
-      return res.status(400).send('Missing Slack payload.');
-    }
-
-    let actionPayload;
-    try {
-      actionPayload = JSON.parse(payload);
-    } catch (error) {
-      console.error('❌ Invalid Slack shortcut payload:', error);
-      return res.status(400).send('Invalid Slack payload.');
-    }
-
-    // Acknowledge Slack right away to avoid timeouts
-    res.status(200).send();
-
-    try {
-      await handleSentimentShortcut(actionPayload);
-    } catch (error) {
-      console.error('❌ Failed to process sentiment shortcut:', error);
     }
   }
 );
